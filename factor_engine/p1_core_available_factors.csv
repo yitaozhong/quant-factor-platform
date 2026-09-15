@@ -1,0 +1,172 @@
+factor,script,source_group,dependencies
+AbnormalAccruals,ZZ2_AbnormalAccruals_AbnormalAccrualsPercent.py,SignalMasterTable backbone,SignalMasterTable.parquet; a_aCompustat.parquet
+Accruals,Accruals.py,Annual/Monthly Compustat,m_aCompustat.parquet
+AccrualsBM,AccrualsBM.py,SignalMasterTable + Compustat,SignalMasterTable.parquet; m_aCompustat.parquet
+AdExp,AdExp.py,SignalMasterTable + Compustat,SignalMasterTable.parquet; m_aCompustat.parquet
+AM,AM.py,SignalMasterTable + Compustat,SignalMasterTable.parquet; m_aCompustat.parquet
+AnalystRevision,AnalystRevision.py,IBES-based,IBES_EPS_Unadj.parquet; SignalMasterTable.parquet
+AnalystValue,ZZ1_AnalystValue_AOP_PredictedFE_IntrinsicValue.py,IBES-based,IBES_EPS_Unadj.parquet; SignalMasterTable.parquet; m_aCompustat.parquet; monthlyCRSP.parquet
+AnnouncementReturn,ZZ2_AnnouncementReturn.py,Daily CRSP + FF,CCMLinkingTable.parquet; dailyCRSP.parquet; dailyFF.parquet; m_QCompustat.parquet
+AOP,ZZ1_AnalystValue_AOP_PredictedFE_IntrinsicValue.py,IBES-based,IBES_EPS_Unadj.parquet; SignalMasterTable.parquet; m_aCompustat.parquet; monthlyCRSP.parquet
+AssetGrowth,AssetGrowth.py,Annual/Monthly Compustat,m_aCompustat.parquet
+Beta,Beta.py,Monthly market / FF,monthlyCRSP.parquet; monthlyFF.parquet; monthlyMarket.parquet
+BetaFP,ZZ2_BetaFP.py,Daily CRSP + FF,dailyCRSP.parquet; dailyFF.parquet
+BetaLiquidityPS,BetaLiquidityPS.py,Liquidity factor input,monthlyCRSP.parquet; monthlyFF.parquet; monthlyLiquidity.parquet
+BetaTailRisk,BetaTailRisk.py,Daily CRSP,dailyCRSP.parquet; monthlyCRSP.parquet
+BM,BM.py,SignalMasterTable + Compustat,SignalMasterTable.parquet; m_aCompustat.parquet
+BMdec,BMdec.py,CRSP monthly + Compustat,m_aCompustat.parquet; monthlyCRSP.parquet
+BookLeverage,BookLeverage.py,Annual/Monthly Compustat,m_aCompustat.parquet
+BPEBM,ZZ1_EBM_BPEBM.py,SignalMasterTable + Compustat,SignalMasterTable.parquet; m_aCompustat.parquet
+BrandInvest,BrandInvest.py,Other P1,a_aCompustat.parquet
+Cash,Cash.py,Quarterly Compustat,SignalMasterTable.parquet; m_QCompustat.parquet
+CashProd,CashProd.py,SignalMasterTable + Compustat,SignalMasterTable.parquet; m_aCompustat.parquet
+CBOperProf,CBOperProf.py,SignalMasterTable + Compustat,SignalMasterTable.parquet; m_aCompustat.parquet
+CF,CF.py,SignalMasterTable + Compustat,SignalMasterTable.parquet; m_aCompustat.parquet
+cfp,cfp.py,SignalMasterTable + Compustat,SignalMasterTable.parquet; m_aCompustat.parquet
+ChangeInRecommendation,ChangeInRecommendation.py,IBES-based,IBES_Recommendations.parquet; SignalMasterTable.parquet
+ChAssetTurnover,ChAssetTurnover.py,Annual/Monthly Compustat,m_aCompustat.parquet
+ChEQ,ChEQ.py,Annual/Monthly Compustat,m_aCompustat.parquet
+ChForecastAccrual,ChForecastAccrual.py,IBES-based,IBES_EPS_Unadj.parquet; SignalMasterTable.parquet; m_aCompustat.parquet
+ChInv,ChInv.py,Annual/Monthly Compustat,m_aCompustat.parquet
+ChInvIA,ChInvIA.py,SignalMasterTable + Compustat,SignalMasterTable.parquet; m_aCompustat.parquet
+ChNAnalyst,ChNAnalyst.py,IBES-based,IBES_EPS_Unadj.parquet; SignalMasterTable.parquet
+ChNNCOA,ChNNCOA.py,Annual/Monthly Compustat,m_aCompustat.parquet
+ChNWC,ChNWC.py,Annual/Monthly Compustat,m_aCompustat.parquet
+ChTax,ChTax.py,Quarterly Compustat,m_QCompustat.parquet; m_aCompustat.parquet
+CompEquIss,CompEquIss.py,SignalMasterTable backbone,SignalMasterTable.parquet
+CompositeDebtIssuance,CompositeDebtIssuance.py,Annual/Monthly Compustat,m_aCompustat.parquet
+ConsRecomm,ConsRecomm.py,IBES-based,IBES_Recommendations.parquet; SignalMasterTable.parquet
+ConvDebt,ConvDebt.py,Annual/Monthly Compustat,m_aCompustat.parquet
+CoskewACX,CoskewACX.py,Daily CRSP + FF,dailyCRSP.parquet; dailyFF.parquet
+Coskewness,Coskewness.py,Monthly market / FF,monthlyCRSP.parquet; monthlyFF.parquet
+DebtIssuance,DebtIssuance.py,SignalMasterTable + Compustat,SignalMasterTable.parquet; m_aCompustat.parquet
+DelCOA,DelCOA.py,Annual/Monthly Compustat,m_aCompustat.parquet
+DelCOL,DelCOL.py,Annual/Monthly Compustat,m_aCompustat.parquet
+DelDRC,DelDRC.py,Annual/Monthly Compustat,m_aCompustat.parquet
+DelEqu,DelEqu.py,Annual/Monthly Compustat,m_aCompustat.parquet
+DelFINL,DelFINL.py,Annual/Monthly Compustat,m_aCompustat.parquet
+DelLTI,DelLTI.py,Annual/Monthly Compustat,m_aCompustat.parquet
+DelNetFin,DelNetFin.py,Annual/Monthly Compustat,m_aCompustat.parquet
+DivInit,DivInit.py,CRSP distributions,CRSPdistributions.parquet; SignalMasterTable.parquet
+DivOmit,DivOmit.py,CRSP distributions,CRSPdistributions.parquet; SignalMasterTable.parquet
+DivSeason,DivSeason.py,CRSP distributions,CRSPdistributions.parquet; SignalMasterTable.parquet
+DivYieldST,DivYieldST.py,CRSP distributions,CRSPdistributions.parquet; SignalMasterTable.parquet; monthlyCRSP.parquet
+dNoa,dNoa.py,Annual/Monthly Compustat,m_aCompustat.parquet
+DolVol,DolVol.py,CRSP monthly,monthlyCRSP.parquet
+DownRecomm,DownRecomm.py,IBES-based,IBES_Recommendations.parquet; SignalMasterTable.parquet
+EarningsConsistency,EarningsConsistency.py,Annual/Monthly Compustat,m_aCompustat.parquet
+EarningsForecastDisparity,EarningsForecastDisparity.py,IBES-based,IBES_EPS_Unadj.parquet; IBES_UnadjustedActuals.parquet; SignalMasterTable.parquet
+EarningsStreak,EarningsStreak.py,IBES-based,IBES_EPS_Adj.parquet; SignalMasterTable.parquet
+EarningsSurprise,EarningsSurprise.py,Quarterly Compustat,SignalMasterTable.parquet; m_QCompustat.parquet
+EarnSupBig,EarnSupBig.py,Quarterly Compustat,SignalMasterTable.parquet; m_QCompustat.parquet
+EBM,ZZ1_EBM_BPEBM.py,SignalMasterTable + Compustat,SignalMasterTable.parquet; m_aCompustat.parquet
+EntMult,EntMult.py,SignalMasterTable + Compustat,SignalMasterTable.parquet; m_aCompustat.parquet
+EP,EP.py,SignalMasterTable + Compustat,SignalMasterTable.parquet; m_aCompustat.parquet
+EquityDuration,EquityDuration.py,Other P1,a_aCompustat.parquet
+ExchSwitch,ExchSwitch.py,SignalMasterTable backbone,SignalMasterTable.parquet
+ExclExp,ExclExp.py,IBES-based,IBES_UnadjustedActuals.parquet; SignalMasterTable.parquet; m_QCompustat.parquet
+FEPS,FEPS.py,IBES-based,IBES_EPS_Unadj.parquet; SignalMasterTable.parquet
+fgr5yrLag,fgr5yrLag.py,IBES-based,IBES_EPS_Unadj.parquet; SignalMasterTable.parquet; m_aCompustat.parquet
+FirmAge,FirmAge.py,SignalMasterTable backbone,SignalMasterTable.parquet
+FirmAgeMom,FirmAgeMom.py,SignalMasterTable backbone,SignalMasterTable.parquet
+ForecastDispersion,ForecastDispersion.py,IBES-based,IBES_EPS_Unadj.parquet; SignalMasterTable.parquet
+Frontier,Frontier.py,SignalMasterTable + Compustat,SignalMasterTable.parquet; m_aCompustat.parquet
+GP,GP.py,Annual/Monthly Compustat,m_aCompustat.parquet
+GrAdExp,GrAdExp.py,SignalMasterTable + Compustat,SignalMasterTable.parquet; m_aCompustat.parquet
+grcapx,ZZ1_grcapx_grcapx1y_grcapx3y.py,SignalMasterTable + Compustat,SignalMasterTable.parquet; m_aCompustat.parquet
+grcapx3y,ZZ1_grcapx_grcapx1y_grcapx3y.py,SignalMasterTable + Compustat,SignalMasterTable.parquet; m_aCompustat.parquet
+GrLTNOA,GrLTNOA.py,Annual/Monthly Compustat,m_aCompustat.parquet
+GrSaleToGrInv,GrSaleToGrInv.py,Annual/Monthly Compustat,m_aCompustat.parquet
+GrSaleToGrOverhead,GrSaleToGrOverhead.py,Annual/Monthly Compustat,m_aCompustat.parquet
+Herf,Herf.py,SignalMasterTable + Compustat,SignalMasterTable.parquet; m_aCompustat.parquet
+HerfAsset,HerfAsset.py,SignalMasterTable + Compustat,SignalMasterTable.parquet; m_aCompustat.parquet
+HerfBE,HerfBE.py,SignalMasterTable + Compustat,SignalMasterTable.parquet; m_aCompustat.parquet
+High52,High52.py,Daily CRSP,dailyCRSP.parquet
+hire,hire.py,Annual/Monthly Compustat,m_aCompustat.parquet
+IdioVol3F,ZZ0_RealizedVol_IdioVol3F_ReturnSkew3F.py,Daily CRSP + FF,dailyCRSP.parquet; dailyFF.parquet
+IdioVolAHT,ZZ2_IdioVolAHT.py,Daily CRSP + FF,dailyCRSP.parquet; dailyFF.parquet
+Illiquidity,Illiquidity.py,Daily CRSP,dailyCRSP.parquet
+IndMom,IndMom.py,SignalMasterTable backbone,SignalMasterTable.parquet
+IndRetBig,IndRetBig.py,SignalMasterTable backbone,SignalMasterTable.parquet
+IntanBM,ZZ1_IntanBM_IntanSP_IntanCFP_IntanEP.py,SignalMasterTable + Compustat,SignalMasterTable.parquet; m_aCompustat.parquet
+IntanCFP,ZZ1_IntanBM_IntanSP_IntanCFP_IntanEP.py,SignalMasterTable + Compustat,SignalMasterTable.parquet; m_aCompustat.parquet
+IntanEP,ZZ1_IntanBM_IntanSP_IntanCFP_IntanEP.py,SignalMasterTable + Compustat,SignalMasterTable.parquet; m_aCompustat.parquet
+IntanSP,ZZ1_IntanBM_IntanSP_IntanCFP_IntanEP.py,SignalMasterTable + Compustat,SignalMasterTable.parquet; m_aCompustat.parquet
+IntMom,IntMom.py,SignalMasterTable backbone,SignalMasterTable.parquet
+Investment,Investment.py,Annual/Monthly Compustat,m_aCompustat.parquet
+InvestPPEInv,InvestPPEInv.py,Annual/Monthly Compustat,m_aCompustat.parquet
+Leverage,Leverage.py,SignalMasterTable + Compustat,SignalMasterTable.parquet; m_aCompustat.parquet
+LRreversal,LRreversal.py,SignalMasterTable backbone,SignalMasterTable.parquet
+MaxRet,MaxRet.py,Daily CRSP,dailyCRSP.parquet
+MeanRankRevGrowth,MeanRankRevGrowth.py,Annual/Monthly Compustat,m_aCompustat.parquet
+Mom12m,Mom12m.py,SignalMasterTable backbone,SignalMasterTable.parquet
+Mom12mOffSeason,Mom12mOffSeason.py,SignalMasterTable backbone,SignalMasterTable.parquet
+Mom6m,Mom6m.py,SignalMasterTable backbone,SignalMasterTable.parquet
+MomOffSeason,MomOffSeason.py,SignalMasterTable backbone,SignalMasterTable.parquet
+MomOffSeason06YrPlus,MomOffSeason06YrPlus.py,SignalMasterTable backbone,SignalMasterTable.parquet
+MomOffSeason11YrPlus,MomOffSeason11YrPlus.py,SignalMasterTable backbone,SignalMasterTable.parquet
+MomOffSeason16YrPlus,MomOffSeason16YrPlus.py,SignalMasterTable backbone,SignalMasterTable.parquet
+MomRev,MomRev.py,SignalMasterTable backbone,SignalMasterTable.parquet
+MomSeason,MomSeason.py,SignalMasterTable backbone,SignalMasterTable.parquet
+MomSeason06YrPlus,MomSeason06YrPlus.py,SignalMasterTable backbone,SignalMasterTable.parquet
+MomSeason11YrPlus,MomSeason11YrPlus.py,SignalMasterTable backbone,SignalMasterTable.parquet
+MomSeason16YrPlus,MomSeason16YrPlus.py,SignalMasterTable backbone,SignalMasterTable.parquet
+MomSeasonShort,MomSeasonShort.py,SignalMasterTable backbone,SignalMasterTable.parquet
+MomVol,MomVol.py,SignalMasterTable backbone,SignalMasterTable.parquet; monthlyCRSP.parquet
+MRreversal,MRreversal.py,SignalMasterTable backbone,SignalMasterTable.parquet
+MS,MS.py,SignalMasterTable + Compustat,SignalMasterTable.parquet; m_QCompustat.parquet; m_aCompustat.parquet
+NetDebtFinance,NetDebtFinance.py,Annual/Monthly Compustat,m_aCompustat.parquet
+NetDebtPrice,NetDebtPrice.py,SignalMasterTable + Compustat,SignalMasterTable.parquet; m_aCompustat.parquet
+NetEquityFinance,NetEquityFinance.py,Annual/Monthly Compustat,m_aCompustat.parquet
+NetPayoutYield,NetPayoutYield.py,SignalMasterTable + Compustat,SignalMasterTable.parquet; m_aCompustat.parquet
+NOA,NOA.py,Annual/Monthly Compustat,m_aCompustat.parquet
+NumEarnIncrease,NumEarnIncrease.py,Quarterly Compustat,SignalMasterTable.parquet; m_QCompustat.parquet
+OperProf,OperProf.py,SignalMasterTable + Compustat,SignalMasterTable.parquet; m_aCompustat.parquet
+OperProfRD,OperProfRD.py,SignalMasterTable + Compustat,SignalMasterTable.parquet; m_aCompustat.parquet
+OPLeverage,OPLeverage.py,Annual/Monthly Compustat,m_aCompustat.parquet
+OrderBacklog,OrderBacklog.py,Annual/Monthly Compustat,m_aCompustat.parquet
+OrderBacklogChg,OrderBacklogChg.py,Annual/Monthly Compustat,m_aCompustat.parquet
+PayoutYield,PayoutYield.py,SignalMasterTable + Compustat,SignalMasterTable.parquet; m_aCompustat.parquet
+PctAcc,PctAcc.py,Annual/Monthly Compustat,m_aCompustat.parquet
+PctTotAcc,PctTotAcc.py,Annual/Monthly Compustat,m_aCompustat.parquet
+PredictedFE,ZZ1_AnalystValue_AOP_PredictedFE_IntrinsicValue.py,IBES-based,IBES_EPS_Unadj.parquet; SignalMasterTable.parquet; m_aCompustat.parquet; monthlyCRSP.parquet
+Price,Price.py,SignalMasterTable backbone,SignalMasterTable.parquet
+PriceDelayRsq,ZZ2_PriceDelaySlope_PriceDelayRsq_PriceDelayTstat.py,Daily CRSP + FF,dailyCRSP.parquet; dailyFF.parquet
+PriceDelaySlope,ZZ2_PriceDelaySlope_PriceDelayRsq_PriceDelayTstat.py,Daily CRSP + FF,dailyCRSP.parquet; dailyFF.parquet
+PriceDelayTstat,ZZ2_PriceDelaySlope_PriceDelayRsq_PriceDelayTstat.py,Daily CRSP + FF,dailyCRSP.parquet; dailyFF.parquet
+PS,PS.py,CRSP monthly + Compustat,SignalMasterTable.parquet; m_aCompustat.parquet; monthlyCRSP.parquet
+RD,RD.py,SignalMasterTable + Compustat,SignalMasterTable.parquet; m_aCompustat.parquet
+RDAbility,RDAbility.py,Other P1,a_aCompustat.parquet
+RDcap,RDcap.py,SignalMasterTable + Compustat,SignalMasterTable.parquet; m_aCompustat.parquet
+realestate,realestate.py,SignalMasterTable + Compustat,SignalMasterTable.parquet; m_aCompustat.parquet
+RealizedVol,ZZ0_RealizedVol_IdioVol3F_ReturnSkew3F.py,Daily CRSP + FF,dailyCRSP.parquet; dailyFF.parquet
+ResidualMomentum,ZZ1_ResidualMomentum6m_ResidualMomentum.py,Monthly market / FF,monthlyCRSP.parquet; monthlyFF.parquet
+ReturnSkew,ReturnSkew.py,Daily CRSP,dailyCRSP.parquet
+ReturnSkew3F,ZZ0_RealizedVol_IdioVol3F_ReturnSkew3F.py,Daily CRSP + FF,dailyCRSP.parquet; dailyFF.parquet
+REV6,REV6.py,IBES-based,IBES_EPS_Unadj.parquet; SignalMasterTable.parquet
+RevenueSurprise,RevenueSurprise.py,Quarterly Compustat,SignalMasterTable.parquet; m_QCompustat.parquet
+roaq,roaq.py,Quarterly Compustat,SignalMasterTable.parquet; m_QCompustat.parquet
+RoE,RoE.py,Annual/Monthly Compustat,m_aCompustat.parquet
+sfe,sfe.py,IBES-based,IBES_EPS_Unadj.parquet; SignalMasterTable.parquet; m_aCompustat.parquet
+ShareIss1Y,ShareIss1Y.py,SignalMasterTable backbone,SignalMasterTable.parquet; monthlyCRSP.parquet
+ShareIss5Y,ShareIss5Y.py,SignalMasterTable backbone,SignalMasterTable.parquet; monthlyCRSP.parquet
+ShareRepurchase,ShareRepurchase.py,Annual/Monthly Compustat,m_aCompustat.parquet
+ShareVol,ShareVol.py,SignalMasterTable backbone,SignalMasterTable.parquet; monthlyCRSP.parquet
+Size,Size.py,SignalMasterTable backbone,SignalMasterTable.parquet
+SP,SP.py,SignalMasterTable + Compustat,SignalMasterTable.parquet; m_aCompustat.parquet
+std_turn,std_turn.py,CRSP monthly,monthlyCRSP.parquet
+STreversal,STreversal.py,SignalMasterTable backbone,SignalMasterTable.parquet
+SurpriseRD,SurpriseRD.py,Annual/Monthly Compustat,m_aCompustat.parquet
+tang,tang.py,Annual/Monthly Compustat,m_aCompustat.parquet
+Tax,Tax.py,Annual/Monthly Compustat,m_aCompustat.parquet
+TotalAccruals,TotalAccruals.py,Annual/Monthly Compustat,m_aCompustat.parquet
+TrendFactor,TrendFactor.py,Daily CRSP,SignalMasterTable.parquet; dailyCRSP.parquet
+UpRecomm,UpRecomm.py,IBES-based,IBES_Recommendations.parquet; SignalMasterTable.parquet
+VarCF,VarCF.py,SignalMasterTable + Compustat,SignalMasterTable.parquet; m_aCompustat.parquet
+VolMkt,VolMkt.py,CRSP monthly,monthlyCRSP.parquet
+VolSD,VolSD.py,CRSP monthly,monthlyCRSP.parquet
+VolumeTrend,VolumeTrend.py,CRSP monthly,monthlyCRSP.parquet
+XFIN,XFIN.py,Annual/Monthly Compustat,m_aCompustat.parquet
+zerotrade12M,ZZ1_zerotrade_zerotradeAlt1_zerotradeAlt12.py,Daily CRSP,dailyCRSP.parquet
+zerotrade1M,ZZ1_zerotrade_zerotradeAlt1_zerotradeAlt12.py,Daily CRSP,dailyCRSP.parquet
+zerotrade6M,ZZ1_zerotrade_zerotradeAlt1_zerotradeAlt12.py,Daily CRSP,dailyCRSP.parquet
