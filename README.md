@@ -109,6 +109,34 @@ not an afterthought:
 
 ---
 
+## Setup
+
+The backtester and its 30-test suite run standalone from this checkout:
+
+```bash
+pip install -r requirements.txt
+cd backtest && python -m pytest tests   # 30 passed, no data needed
+```
+
+Building the factor library itself requires the two external pieces this repo
+deliberately does not contain:
+
+1. **The OSAP pipeline** — clone [open-source-asset-pricing](https://github.com/OpenSourceAP/CrossSection)
+   into `factor_engine/Open_Source_Asset_Pricing/` (the engine reads its `SignalDoc.csv`
+   factor definitions, and its `DataDownloads/` scripts — extended by `wrds_extensions/` —
+   produce the intermediate parquets).
+2. **WRDS credentials** — a `.env` with `WRDS_USERNAME` / `WRDS_PASSWORD` next to the
+   download scripts (git-ignored; requires CRSP/Compustat/IBES access).
+
+Then: run the download scripts in the order documented in `wrds_extensions/README.md`,
+build the daily buckets (`p1_build_daily_buckets.py`), and build the library:
+
+```python
+from p1_executor import run_build
+run_build()                    # full build (~45 min)
+run_build(incremental=True)    # later: rebuilds only what changed
+```
+
 ## Repository layout
 
 ```

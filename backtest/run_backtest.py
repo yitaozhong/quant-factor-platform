@@ -73,13 +73,14 @@ def next_daily_run_name(output_root, prefix='backtest', now=None):
     return f'{prefix}_{date_stamp}_{next_index}'
 
 
-PROJECT_ROOT = resolve_project_root()
-DATA_ROOT = PROJECT_ROOT / 'Data'
-PROJECT_BACKTEST_DIR = PROJECT_ROOT / 'Project_backtest'
+# Project-root resolution is deliberately LAZY: importing this module must not
+# require the data directories to exist (e.g. when the test suite runs from a
+# code-only checkout). The root is resolved on first use inside
+# build_monthly_config().
 
 
 def build_monthly_config(project_root=None, run_name=None):
-    project_root = PROJECT_ROOT if project_root is None else Path(project_root)
+    project_root = resolve_project_root() if project_root is None else Path(project_root)
     data_root = project_root / 'Data'
     project_backtest_dir = project_root / 'Project_backtest'
     output_root = project_backtest_dir / 'output'
