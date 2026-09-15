@@ -1,0 +1,36 @@
+# ============================================================
+# HARD BLOCKS — this repository must never contain market data
+# (CRSP / Compustat / IBES are licensed via WRDS) or credentials.
+# ============================================================
+*.parquet
+*.pkl
+*.pickle
+*.feather
+*.h5
+*.env
+.env*
+*.secret
+*credentials*
+
+# data & output directories (never committed, wherever they appear)
+Data/
+data/
+pyData/
+output/
+outputs/
+tests_output_artifacts/
+daily_buckets/
+Intermediate*/
+
+# python
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.ipynb_checkpoints/
+
+# os / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
