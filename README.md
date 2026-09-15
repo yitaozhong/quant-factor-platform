@@ -69,9 +69,6 @@ train/test separation.
 
 ## The correctness program
 
-Backtests are only as honest as their inputs, so correctness is treated as a program,
-not an afterthought:
-
 1. **Reference parity first.** Every factor's engine output is diffed cell-by-cell
    (~4.6M cells per factor) against the output of its reference script. Pass requires
    identical NaN patterns — a value where the reference has "missing" is a failure —
@@ -158,6 +155,3 @@ backtest/               Quant_Strategy_ML walk-forward backtester + models + 30-
   repository are independent reimplementations validated against their outputs.
 - **License:** MIT for the code in this repository (see `LICENSE`).
 
-*Built with AI-assisted development (LLM agent orchestration for implementation,
-adversarial code audits, and data forensics), with all results gated through the
-validation harness described above.*
