@@ -1,0 +1,319 @@
+{
+  "generated": "2026-08-01",
+  "_meta": {
+    "method": "static trace of the CURRENT p1_factor_engine.py, empirically gated by a column-restricted 18-factor executor run against Data/golden/native (atol=0, rtol=0)",
+    "purpose": "footprint patch 2: the 16 store-reading ops whose base-audit entries predate the engine refactor that moved the IBES/analyst link and universe base from monthlyCRSP/IBESCRSPLinkingTable onto SignalMasterTable.parquet (helpers _smt_ticker_link engine:586-599 and the rewritten _prepare_analyst_value_signals engine:2414-2566). Entries here fully REPLACE the base entries for these op names (loader merge is patch-wins).",
+    "conventions": "same as p1_kernel_footprints_patch.json: every read here is store.load_raw, so 'columns' lists EVERY column the code subsequently touches, including filter/merge/assign keys; direct_files lists non-store file reads (none for these ops - the sicff.py import noted for _op_frontier_signal is a code module, not a data file).",
+    "n_functions": 16,
+    "covered_factors": [
+      "Frontier", "MS", "ExclExp", "ChForecastAccrual", "fgr5yrLag", "AOP", "AnalystValue",
+      "PredictedFE", "sfe", "REV6", "AbnormalAccruals", "ChangeInRecommendation", "ConsRecomm",
+      "DownRecomm", "UpRecomm", "EarningsStreak", "FEPS", "EarningsForecastDisparity"
+    ]
+  },
+  "kernels": [
+    {
+      "op_name": "_op_frontier_signal",
+      "footprint": [
+        {
+          "dataset": "SignalMasterTable.parquet",
+          "columns": ["permno", "time_avail_m", "mve_permco", "sicCRSP"]
+        },
+        {
+          "dataset": "m_aCompustat.parquet",
+          "columns": ["permno", "time_avail_m", "at", "ceq", "dltt", "capx", "sale", "xrd", "xad", "ppent", "ebitda"]
+        }
+      ],
+      "direct_files": [],
+      "notes": "engine:2947-3016. Base entry STALE: mve_permco/sicCRSP now come from SignalMasterTable (engine:2950-2954), not monthlyCRSP. Inner merge on [permno, time_avail_m]. Non-store CODE dependency: _get_ff48_func imports Open_Source_Asset_Pricing pyCode utils/sicff.py at runtime (engine:196-208) - a packager must preserve it, but it is not a store dataset."
+    },
+    {
+      "op_name": "_op_ms_signal",
+      "footprint": [
+        {
+          "dataset": "m_aCompustat.parquet",
+          "columns": ["permno", "gvkey", "time_avail_m", "datadate", "at", "ceq", "ni", "oancf", "fopt", "wcapch", "ib", "dp", "xrd", "capx", "xad", "revt"]
+        },
+        {
+          "dataset": "SignalMasterTable.parquet",
+          "columns": ["permno", "time_avail_m", "mve_permco", "sicCRSP"]
+        },
+        {
+          "dataset": "m_QCompustat.parquet",
+          "columns": ["gvkey", "time_avail_m", "niq", "atq", "saleq", "oancfy", "capxy", "xrdq", "fyearq", "fqtr", "datafqtr", "datadateq"]
+        }
+      ],
+      "direct_files": [],
+      "notes": "engine:3122-3250. Base entry STALE only on the CRSP leg: the shrcd/exchcd-filtered universe with mve_permco/sicCRSP is now read from SignalMasterTable (engine:3164-3168), not monthlyCRSP. m_aCompustat and m_QCompustat legs unchanged from base (all columns in the .loc selects at engine:3159/3171 must survive pruning, including fyearq/datafqtr/datadateq which are selected but not consumed downstream)."
+    },
+    {
+      "op_name": "_op_excluded_expenses_signal",
+      "footprint": [
+        {
+          "dataset": "SignalMasterTable.parquet",
+          "columns": ["permno", "gvkey", "time_avail_m", "tickerIBES"]
+        },
+        {
+          "dataset": "m_QCompustat.parquet",
+          "columns": ["gvkey", "time_avail_m", "epspiq"]
+        },
+        {
+          "dataset": "IBES_UnadjustedActuals.parquet",
+          "columns": ["tickerIBES", "time_avail_m", "int0a"]
+        }
+      ],
+      "direct_files": [],
+      "notes": "engine:3616-3640. Base entry STALE: the two link-table maps (_gvkey_permno_month_map on m_aCompustat + _ibes_permno_month_map on IBESCRSPLinkingTable) are REPLACED by a single SignalMasterTable base carrying permno/gvkey/tickerIBES (engine:3620-3624). m_aCompustat and IBESCRSPLinkingTable are no longer read by this op."
+    },
+    {
+      "op_name": "_op_chforecast_accrual_signal",
+      "footprint": [
+        {
+          "dataset": "IBES_EPS_Unadj.parquet",
+          "columns": ["fpi", "tickerIBES", "time_avail_m", "meanest"]
+        },
+        {
+          "dataset": "m_aCompustat.parquet",
+          "columns": ["permno", "time_avail_m", "act", "che", "lct", "dlc", "txp", "at"]
+        },
+        {
+          "dataset": "SignalMasterTable.parquet",
+          "columns": ["permno", "time_avail_m", "tickerIBES"]
+        }
+      ],
+      "direct_files": [],
+      "notes": "engine:3643-3689. Base entry STALE on the link leg: permno->tickerIBES now comes from _smt_ticker_link (SignalMasterTable [permno, time_avail_m, tickerIBES], engine:586-599, called at 3655), replacing _ibes_permno_month_map/IBESCRSPLinkingTable. IBES fpi filter compares against the STRING '1'."
+    },
+    {
+      "op_name": "_op_fgr5yr_lag_signal",
+      "footprint": [
+        {
+          "dataset": "IBES_EPS_Unadj.parquet",
+          "columns": ["fpi", "tickerIBES", "time_avail_m", "meanest"]
+        },
+        {
+          "dataset": "m_aCompustat.parquet",
+          "columns": ["permno", "time_avail_m", "ceq", "ib", "txdi", "dv", "sale", "ni", "dp"]
+        },
+        {
+          "dataset": "SignalMasterTable.parquet",
+          "columns": ["permno", "time_avail_m", "tickerIBES"]
+        }
+      ],
+      "direct_files": [],
+      "notes": "engine:3692-3712. Base entry STALE on the link leg: comp INNER-merged with _smt_ticker_link triples (engine:3702) instead of the IBESCRSPLinkingTable map. fpi filter is the STRING '0' (LTG horizon)."
+    },
+    {
+      "op_name": "_op_analyst_value_signal",
+      "footprint": [
+        {
+          "dataset": "IBES_EPS_Unadj.parquet",
+          "columns": ["tickerIBES", "time_avail_m", "fpi", "statpers", "fpedats", "meanest"]
+        },
+        {
+          "dataset": "SignalMasterTable.parquet",
+          "columns": ["permno", "tickerIBES", "time_avail_m", "prc"]
+        },
+        {
+          "dataset": "monthlyCRSP.parquet",
+          "columns": ["permno", "time_avail_m", "shrout"]
+        },
+        {
+          "dataset": "m_aCompustat.parquet",
+          "columns": ["permno", "time_avail_m", "ceq", "ib", "ibcom", "ni", "sale", "datadate", "dvc", "at"]
+        }
+      ],
+      "direct_files": [],
+      "notes": "engine:2935-2936 delegating to _prepare_analyst_value_signals (engine:2414-2566; result cached in store._derived_cache['analyst_value_signals'], shared with _op_analyst_optimism_ratio and _op_predicted_forecast_error). Base entry STALE: the panel base is now the FULL SignalMasterTable carrying permno/tickerIBES/prc (engine:2444-2447); monthlyCRSP contributes ONLY shrout (prc no longer read from it) and IBESCRSPLinkingTable is no longer read. m_aCompustat 'ib' and 'ni' are selected at engine:2455 but unused downstream - they must still survive pruning or the .loc raises KeyError."
+    },
+    {
+      "op_name": "_op_analyst_optimism_ratio",
+      "footprint": [
+        {
+          "dataset": "IBES_EPS_Unadj.parquet",
+          "columns": ["tickerIBES", "time_avail_m", "fpi", "statpers", "fpedats", "meanest"]
+        },
+        {
+          "dataset": "SignalMasterTable.parquet",
+          "columns": ["permno", "tickerIBES", "time_avail_m", "prc"]
+        },
+        {
+          "dataset": "monthlyCRSP.parquet",
+          "columns": ["permno", "time_avail_m", "shrout"]
+        },
+        {
+          "dataset": "m_aCompustat.parquet",
+          "columns": ["permno", "time_avail_m", "ceq", "ib", "ibcom", "ni", "sale", "datadate", "dvc", "at"]
+        }
+      ],
+      "direct_files": [],
+      "notes": "engine:2939-2940. Identical closure to _op_analyst_value_signal - both delegate entirely to the shared _prepare_analyst_value_signals (engine:2414-2566, derived-cache key 'analyst_value_signals'). See that entry for the staleness detail."
+    },
+    {
+      "op_name": "_op_predicted_forecast_error",
+      "footprint": [
+        {
+          "dataset": "IBES_EPS_Unadj.parquet",
+          "columns": ["tickerIBES", "time_avail_m", "fpi", "statpers", "fpedats", "meanest"]
+        },
+        {
+          "dataset": "SignalMasterTable.parquet",
+          "columns": ["permno", "tickerIBES", "time_avail_m", "prc"]
+        },
+        {
+          "dataset": "monthlyCRSP.parquet",
+          "columns": ["permno", "time_avail_m", "shrout"]
+        },
+        {
+          "dataset": "m_aCompustat.parquet",
+          "columns": ["permno", "time_avail_m", "ceq", "ib", "ibcom", "ni", "sale", "datadate", "dvc", "at"]
+        }
+      ],
+      "direct_files": [],
+      "notes": "engine:2943-2944. Identical closure to _op_analyst_value_signal - delegates entirely to the shared _prepare_analyst_value_signals (engine:2414-2566, derived-cache key 'analyst_value_signals')."
+    },
+    {
+      "op_name": "_op_sfe_signal",
+      "footprint": [
+        {
+          "dataset": "IBES_EPS_Unadj.parquet",
+          "columns": ["fpi", "statpers", "fpedats", "tickerIBES", "time_avail_m", "medest", "numest"]
+        },
+        {
+          "dataset": "SignalMasterTable.parquet",
+          "columns": ["permno", "time_avail_m", "tickerIBES", "prc"]
+        },
+        {
+          "dataset": "m_aCompustat.parquet",
+          "columns": ["permno", "time_avail_m", "datadate"]
+        }
+      ],
+      "direct_files": [],
+      "notes": "engine:3715-3744. Base entry STALE: the IBESCRSPLinkingTable map AND the monthlyCRSP prc leg are replaced by ONE SignalMasterTable read [permno, time_avail_m, tickerIBES, prc] with time_avail_m renamed prc_time (engine:3727-3732); monthlyCRSP is no longer read by this op."
+    },
+    {
+      "op_name": "_op_sum_scaled_revisions",
+      "footprint": [
+        {
+          "dataset": "IBES_EPS_Unadj.parquet",
+          "columns": ["fpi", "fpedats", "statpers", "tickerIBES", "time_avail_m", "meanest"]
+        },
+        {
+          "dataset": "SignalMasterTable.parquet",
+          "columns": ["permno", "tickerIBES", "time_avail_m", "prc"]
+        }
+      ],
+      "direct_files": [],
+      "notes": "engine:3538-3572. Base entry STALE: the base panel is the FULL SignalMasterTable with SMT's own prc (engine:3555), replacing both the IBESCRSPLinkingTable map and the monthlyCRSP prc leg; neither of those files is read by this op any more."
+    },
+    {
+      "op_name": "_op_abnormal_accruals_signal",
+      "footprint": [
+        {
+          "dataset": "a_aCompustat.parquet",
+          "columns": ["gvkey", "permno", "time_avail_m", "fyear", "datadate", "at", "oancf", "fopt", "act", "che", "lct", "dlc", "ib", "sale", "ppegt", "ni", "sic"]
+        },
+        {
+          "dataset": "SignalMasterTable.parquet",
+          "columns": ["permno", "time_avail_m", "exchcd"]
+        }
+      ],
+      "direct_files": [],
+      "notes": "engine:2794-2932. Base entry STALE on the exchange-code leg: exchcd is now left-joined from SignalMasterTable (engine:2801-2802), not monthlyCRSP (the reference's join; monthlyCRSP exchcd differs on ~1k pre-1982 keys). a_aCompustat leg unchanged; 'ni' and 'datadate' are in the .loc select (engine:2795-2798) and must survive pruning even though only datadate is consumed downstream (REFERENCE_MODE _Nobs/timing paths). REFERENCE_MODE branch also calls _expand_annual_signal_ffill (template attributes only, no extra store reads)."
+    },
+    {
+      "op_name": "_op_change_in_recommendation_signal",
+      "footprint": [
+        {
+          "dataset": "IBES_Recommendations.parquet",
+          "columns": ["tickerIBES", "amaskcd", "time_avail_m", "anndats", "ireccd"]
+        },
+        {
+          "dataset": "SignalMasterTable.parquet",
+          "columns": ["permno", "time_avail_m", "tickerIBES"]
+        }
+      ],
+      "direct_files": [],
+      "notes": "engine:3575-3584 via _prepare_recommendation_monthly (engine:2569-2583, derived-cache key 'recommendation_monthly', shared with _op_binary_recommendation_level and _op_recommendation_change_indicator). Base entry STALE on the link leg: inner merge with _smt_ticker_link triples (engine:3582) replaces the IBESCRSPLinkingTable map."
+    },
+    {
+      "op_name": "_op_binary_recommendation_level",
+      "footprint": [
+        {
+          "dataset": "IBES_Recommendations.parquet",
+          "columns": ["tickerIBES", "amaskcd", "time_avail_m", "anndats", "ireccd"]
+        },
+        {
+          "dataset": "SignalMasterTable.parquet",
+          "columns": ["permno", "time_avail_m", "tickerIBES"]
+        }
+      ],
+      "direct_files": [],
+      "notes": "engine:3294-3308 via the shared _prepare_recommendation_monthly (engine:2569-2583). Base entry STALE on the link leg: inner merge with _smt_ticker_link (engine:3307) replaces the IBESCRSPLinkingTable map. Thresholds are injected params, not data reads."
+    },
+    {
+      "op_name": "_op_recommendation_change_indicator",
+      "footprint": [
+        {
+          "dataset": "IBES_Recommendations.parquet",
+          "columns": ["tickerIBES", "amaskcd", "time_avail_m", "anndats", "ireccd"]
+        },
+        {
+          "dataset": "SignalMasterTable.parquet",
+          "columns": ["permno", "time_avail_m", "tickerIBES"]
+        }
+      ],
+      "direct_files": [],
+      "notes": "engine:3311-3333 via the shared _prepare_recommendation_monthly (engine:2569-2583). Serves BOTH UpRecomm and DownRecomm (direction param). Base entry STALE on the link leg: inner merge with _smt_ticker_link (engine:3332) replaces the IBESCRSPLinkingTable map."
+    },
+    {
+      "op_name": "_op_earnings_streak_signal",
+      "footprint": [
+        {
+          "dataset": "IBES_EPS_Adj.parquet",
+          "columns": ["fpi", "actual", "meanest", "price", "anndats_act", "statpers", "tickerIBES"]
+        },
+        {
+          "dataset": "SignalMasterTable.parquet",
+          "columns": ["permno", "time_avail_m", "tickerIBES"]
+        }
+      ],
+      "direct_files": [],
+      "notes": "engine:3747-3773. Base entry STALE on the link leg: the SMT (permno, time_avail_m, tickerIBES) base (engine:3762) replaces the IBESCRSPLinkingTable map as the ffill spine. IBES_EPS_Adj time_avail_m is DERIVED from anndats_act (engine:3750), not read from disk; the whole-frame .copy() + groupby(...).last() (engine:3748/3752) aggregate every loaded column, so pruning to these 7 is exactly the consumed set."
+    },
+    {
+      "op_name": "_op_feps_signal",
+      "footprint": [
+        {
+          "dataset": "IBES_EPS_Unadj.parquet",
+          "columns": ["fpi", "tickerIBES", "time_avail_m", "meanest"]
+        },
+        {
+          "dataset": "SignalMasterTable.parquet",
+          "columns": ["permno", "time_avail_m", "tickerIBES"]
+        }
+      ],
+      "direct_files": [],
+      "notes": "engine:3285-3291. Base entry STALE on the link leg: left merge of the fpi=='1' meanest frame onto _smt_ticker_link triples (engine:3290) replaces the IBESCRSPLinkingTable map. fpi filter is the STRING '1'."
+    },
+    {
+      "op_name": "_op_earnings_forecast_disparity_signal",
+      "footprint": [
+        {
+          "dataset": "IBES_EPS_Unadj.parquet",
+          "columns": ["fpi", "fpedats", "statpers", "tickerIBES", "time_avail_m", "meanest"]
+        },
+        {
+          "dataset": "IBES_UnadjustedActuals.parquet",
+          "columns": ["tickerIBES", "time_avail_m", "fy0a"]
+        },
+        {
+          "dataset": "SignalMasterTable.parquet",
+          "columns": ["permno", "time_avail_m", "tickerIBES"]
+        }
+      ],
+      "direct_files": [],
+      "notes": "engine:3587-3613. Base entry STALE on the link leg: _smt_ticker_link triples are the left/base frame (engine:3602) replacing the IBESCRSPLinkingTable map; short (fpi=='1'), long (fpi=='0'), and actuals frames all left-joined onto it on [tickerIBES, time_avail_m]."
+    }
+  ]
+}

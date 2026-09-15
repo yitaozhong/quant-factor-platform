@@ -1,0 +1,1448 @@
+{
+  "_meta": {
+    "generated": "2026-07-23",
+    "source": "adversarial 11-agent audit of p1_factor_engine.py store-accessing functions",
+    "purpose": "footprint annotations for WS1 canonical DAG, WS2 column pruning, WS4 memoization safety",
+    "n_functions": 39
+  },
+  "module_caches": [
+    "_FF48_FUNC (line 176): the ONLY true module-level mutable cache \u2014 a global initialized to None and lazily set to the FF48 SIC classifier function by _get_ff48_func (lines 187-199); consumed by _op_industry_big_mean (line 1153), _op_frontier_signal (line 1711), and _op_industry_big_return (line 2466). It is a callable holder, not a dict.",
+    "store._derived_cache (created by _get_derived_cache, lines 1212-1219): a mutable dict attached to the DatasetStore INSTANCE via setattr, not module-level. Keys: 'analyst_value_signals', 'recommendation_monthly', 'monthly_stock_base', 'cash_dividend_monthly', 'regular_dividend_monthly', 'regular_dividend_monthly_yearly'. Important: DatasetStore.clear() (lines 391-395) clears only _raw_cache and _panel_cache, so _derived_cache survives stage clears.",
+    "DatasetStore._raw_cache (line 388) and DatasetStore._panel_cache (line 389): instance-level dict caches (dataset-name -> raw DataFrame; (dataset, variable) -> aligned panel).",
+    "Import-time module dicts (populated once at import, not runtime data caches): MONTHLY_PANEL_DATASETS (31), MONTHLY_SERIES_DATASETS (38), SPECIAL_MONTHLY_EVENT_DATASETS (43), LINKED_TICKER_MONTHLY_DATASETS (46), DAILY_PANEL_DATASETS (52), FACTOR_MANIFEST (169), FACTOR_TO_SCRIPT (170), SCRIPT_TO_FACTORS (171), SNAKE_TO_FACTOR (184), OPERATOR_REGISTRY (2572, mutated at import by setdefault loops at 2662-2665).",
+    "Functions verified NOT to access the store despite *_signal naming / audit suspicion: _op_bmdec_signal (1975-2004), _op_piecewise_tax_ratio (2169-2213), _op_total_accruals_signal (2214-2259), _op_piotroski_score (2494-2547) \u2014 none take a store parameter; they operate purely on tree-evaluated args. _op_delegate_to_script (2566+) receives store= via the evaluator kwarg injection but never uses it.",
+    "load_raw call-site count check: 34 store.load_raw sites outside DatasetStore + 3 self.load_raw sites inside DatasetStore.get (lines 414, 417, 437) = 37 total, consistent with the audit's ~35."
+  ],
+  "kernels": [
+    {
+      "op_name": "DatasetStore.clear",
+      "lines": "391-395",
+      "footprint": [],
+      "link_tables": "none",
+      "writes_global_or_derived_cache": "Clears instance caches only: self._raw_cache.clear() (line 394) and self._panel_cache.clear() (line 395). Does NOT clear the dynamically-attached store._derived_cache (created via setattr in _get_derived_cache, lines 1212-1218), so derived-cache entries survive across plan stages. Touches no module-level dict.",
+      "reads_current_factor": false,
+      "mutates_inputs": "no args consumed \u2014 mutates only the two cache dicts in place (dict.clear, lines 394-395). Previously handed-out DataFrames are untouched and remain valid; subsequent load_raw/get calls produce fresh objects no longer shared with pre-clear consumers.",
+      "notes": "Reads zero datasets. The asymmetry (raw/panel cleared, _derived_cache not) means anything memoized in _derived_cache keeps referencing frames from before the clear; if raw parquets change on disk between stages, derived-cache contents can go stale relative to freshly re-read raw/panel data."
+    },
+    {
+      "op_name": "DatasetStore.load_raw",
+      "lines": "397-405",
+      "footprint": [
+        {
+          "dataset": "<parametric: whatever filename is passed as `dataset`>",
+          "columns": [
+            "<ALL columns \u2014 pd.read_parquet(path) at line 404 passes no columns= filter; the entire file is loaded>"
+          ],
+          "via": "load_raw"
+        }
+      ],
+      "link_tables": "none itself (it is the primitive that link-table consumers call)",
+      "writes_global_or_derived_cache": "Reads/writes self._raw_cache[dataset] (memoized per exact filename string, lines 400-405). No _derived_cache, no module-level dict.",
+      "reads_current_factor": false,
+      "mutates_inputs": "no \u2014 performs no mutation itself; but line 405 returns the cached DataFrame BY REFERENCE with no defensive copy, so every caller shares one object. Any caller that mutates the returned frame in place corrupts the cache for all later callers. Callers inside this module are careful (get() rebinds via merge at 442 or copies at 459; _gvkey_permno_month_map slices via .loc at 506) \u2014 safety depends entirely on that caller discipline.",
+      "notes": "CRITICAL for column pruning: load_raw always reads the FULL parquet. Pruning at the file level must take the UNION of columns needed by every consumer of that raw frame (get()'s branches, _gvkey_permno_month_map, _ibes_permno_month_map at 512-518, and any op/script that calls store.load_raw directly), because they all share the single cached frame. Raises FileNotFoundError if the file is absent (lines 402-403)."
+    },
+    {
+      "op_name": "DatasetStore.get",
+      "lines": "407-489",
+      "footprint": [
+        {
+          "dataset": "IBES_EPS_Unadj.parquet | IBES_EPS_Adj.parquet | IBES_Recommendations.parquet | IBES_UnadjustedActuals.parquet (LINKED_TICKER_MONTHLY_DATASETS branch, lines 415-430)",
+          "columns": [
+            "tickerIBES",
+            "time_avail_m",
+            "<variable param \u2014 DYNAMIC, see notes>"
+          ],
+          "via": "load_raw (414) -> merge on ['tickerIBES','time_avail_m'] (421) -> .loc[:, ['time_avail_m','permno',variable]] (423); 'permno' comes from the link table, not the raw IBES file"
+        },
+        {
+          "dataset": "IBESCRSPLinkingTable.parquet",
+          "columns": [
+            "tickerIBES",
+            "permno",
+            "time_avail_m"
+          ],
+          "via": "load_raw (417) -> .loc[:, ['tickerIBES','permno','time_avail_m']] (418) -> dropna(subset=['permno']) (419); NOTE no drop_duplicates here (unlike _ibes_permno_month_map), so duplicate (tickerIBES,time_avail_m) link rows fan out on merge and are collapsed only by aggfunc='last' in pivot_table (425)"
+        },
+        {
+          "dataset": "monthlyCRSP.parquet | m_aCompustat.parquet | a_aCompustat.parquet | m_QCompustat.parquet | CompustatQuarterly.parquet (MONTHLY_PANEL_DATASETS branch, lines 432-451) \u2014 permno path",
+          "columns": [
+            "time_avail_m",
+            "permno",
+            "<variable param \u2014 DYNAMIC>"
+          ],
+          "via": "load_raw (414) -> .loc[:, ['time_avail_m','permno',variable]] (444) -> pivot_table aggfunc='last' (446)"
+        },
+        {
+          "dataset": "same MONTHLY_PANEL_DATASETS branch \u2014 gvkey-only path (raw lacks a 'permno' column; runtime data-dependent check at lines 433-435)",
+          "columns": [
+            "gvkey",
+            "time_avail_m",
+            "<variable param \u2014 DYNAMIC>"
+          ],
+          "via": "raw.merge(gvkey_map, on=['gvkey','time_avail_m'], how='left') (442) then same .loc select (444). KeyError raised at 435 if neither permno nor gvkey exists"
+        },
+        {
+          "dataset": "m_aCompustat.parquet (only on the gvkey-only path)",
+          "columns": [
+            "gvkey",
+            "permno",
+            "time_avail_m"
+          ],
+          "via": "load_raw (437) -> .loc select (438) -> dropna(subset=['permno']) (439) -> drop_duplicates(['gvkey','time_avail_m'], keep='first') (440)"
+        },
+        {
+          "dataset": "monthlyFF.parquet | monthlyMarket.parquet | monthlyLiquidity.parquet (MONTHLY_SERIES_DATASETS branch, lines 453-456)",
+          "columns": [
+            "time_avail_m",
+            "<variable param \u2014 DYNAMIC>"
+          ],
+          "via": "raw.set_index('time_avail_m')[variable].sort_index().reindex(template_index) (454)"
+        },
+        {
+          "dataset": "CRSPdistributions.parquet (SPECIAL_MONTHLY_EVENT_DATASETS branch, lines 458-470)",
+          "columns": [
+            "exdt",
+            "permno",
+            "<variable param \u2014 DYNAMIC; aggfunc='sum' iff variable=='divamt', else 'last' (461)>"
+          ],
+          "via": "raw.copy() (459); 'time_avail_m' is DERIVED from exdt via to_datetime(...).dt.to_period('M').dt.start_time (460) \u2014 it is NOT read from the file, so do not prune exdt; pivot at 465"
+        },
+        {
+          "dataset": "dailyCRSP.parquet (DAILY_PANEL_DATASETS branch, panel path \u2014 'permno' present, lines 472-484)",
+          "columns": [
+            "time_d",
+            "permno",
+            "<variable param \u2014 DYNAMIC>"
+          ],
+          "via": ".loc[:, ['time_d','permno',variable]] (476) -> pivot_table (478) -> reindex(columns=template_columns) (479); index NOT reindexed to template (daily)"
+        },
+        {
+          "dataset": "dailyFF.parquet (DAILY_PANEL_DATASETS branch, series path \u2014 no 'permno' column, lines 485-487)",
+          "columns": [
+            "time_d",
+            "<variable param \u2014 DYNAMIC>"
+          ],
+          "via": "raw.set_index('time_d')[variable].sort_index() (485); the permno/series split is a runtime check on raw.columns (474)"
+        }
+      ],
+      "link_tables": "YES, two: (1) IBESCRSPLinkingTable.parquet, inner merge on ['tickerIBES','time_avail_m'] (lines 416-421) for the four IBES datasets; (2) gvkey->permno map built inline from m_aCompustat.parquet, left merge on ['gvkey','time_avail_m'] (lines 436-442), used ONLY when a MONTHLY_PANEL dataset lacks a permno column (data-dependent, decided at line 433).",
+      "writes_global_or_derived_cache": "Reads/writes self._panel_cache keyed (dataset, variable): read at 410-412; writes at 429, 450, 455, 469, 483, 486. Indirectly reads/writes self._raw_cache via load_raw (414, 417, 437). No _derived_cache, no module-level dict. Datasets outside all five category sets raise NotImplementedError (489).",
+      "reads_current_factor": false,
+      "mutates_inputs": "no \u2014 never mutates a cached/shared frame: the linking table and gvkey map are .loc column-sliced (418, 438) into new frames before dropna/drop_duplicates; the monthly-panel gvkey path REBINDS raw = raw.merge(...) to a new frame at 442 (cached raw untouched); the event branch defensively copies at 459 before assigning events['time_avail_m'] at 460; merge/pivot_table/reindex/set_index/sort_index all return new objects; panel.columns dtype assignments (428, 449, 468, 482) hit only the freshly built panel. HOWEVER: cached panels/series are returned BY REFERENCE with no copy (412 and every store-then-return site), so downstream mutation of a returned panel corrupts _panel_cache for all later callers.",
+      "notes": "The value column (`variable`) is fully DYNAMIC \u2014 chosen by the caller (factor expression trees / op kernels); statically provable columns are only the keys listed above (tickerIBES, permno, gvkey, time_avail_m, time_d, exdt). Enumerating the value columns requires collecting every store.get(dataset, variable) call site / spec expression. Pruning hazards: (a) in the linked-ticker branch the merge at 421 carries ALL raw columns, and line 423 then selects 'permno' \u2014 if a raw IBES file ever GAINED a permno column, merge suffixing (permno_x/permno_y) would break line 423, so pruning tooling must not add permno to those files; (b) 'time_avail_m' for CRSPdistributions is synthesized from exdt, so exdt is required even though no factor names it; rdq/datadate are NOT referenced anywhere in this function."
+    },
+    {
+      "op_name": "_gvkey_permno_month_map",
+      "lines": "503-509",
+      "footprint": [
+        {
+          "dataset": "m_aCompustat.parquet",
+          "columns": [
+            "gvkey",
+            "permno",
+            "time_avail_m"
+          ],
+          "via": "store.load_raw (505) -> .loc[:, ['gvkey','permno','time_avail_m']] (506) -> dropna(subset=['permno']) (507) -> drop_duplicates(['gvkey','time_avail_m'], keep='first') (508)"
+        }
+      ],
+      "link_tables": "It IS the gvkey->permno map constructor (join keys gvkey + time_avail_m; dedup keep='first' per (gvkey, time_avail_m)). Identical column recipe to the inline map inside DatasetStore.get lines 436-441. Does not touch IBESCRSPLinkingTable.",
+      "writes_global_or_derived_cache": "None of its own \u2014 the result is NOT memoized (recomputed on every call). Indirectly populates store._raw_cache['m_aCompustat.parquet'] via load_raw.",
+      "reads_current_factor": false,
+      "mutates_inputs": "no \u2014 copies defensively in effect: the .loc column slice at line 506 materializes a new frame, and dropna (507) / drop_duplicates (508) return new frames with default inplace=False; the cached m_aCompustat raw frame is never touched. The returned map is a fresh object per call, so callers may mutate it freely.",
+      "notes": "Free function taking the store as an argument (not a method). Because the map is rebuilt per call, memoizing it in _derived_cache would be safe from get()'s perspective only if consumers keep treating it read-only; today's per-call rebuild is what makes consumer mutation harmless. Sibling helper _ibes_permno_month_map (512-518) is the IBES analogue: IBESCRSPLinkingTable.parquet columns tickerIBES/permno/time_avail_m with drop_duplicates keep='first' \u2014 same pattern, not in scope but shares the raw cache."
+    },
+    {
+      "op_name": "_ibes_permno_month_map",
+      "lines": "512-518",
+      "footprint": [
+        {
+          "dataset": "IBESCRSPLinkingTable.parquet",
+          "columns": [
+            "tickerIBES",
+            "permno",
+            "time_avail_m"
+          ],
+          "via": "load_raw"
+        }
+      ],
+      "link_tables": "IS the IBES link-table helper: reads IBESCRSPLinkingTable directly (line 514) and returns the tickerIBES\u2192permno per-month map keyed on ['tickerIBES','time_avail_m'] (dedup keep='first', line 517). Does not touch the gvkey map.",
+      "writes_global_or_derived_cache": "none (load_raw populates store._raw_cache internally, but this function reads/writes no _derived_cache or module-level dict keys)",
+      "reads_current_factor": false,
+      "mutates_inputs": "no \u2014 line 515 `.loc[:, ['tickerIBES','permno','time_avail_m']]` returns a copy of the raw-cached frame, and the subsequent .dropna(subset=['permno']) (516) and .drop_duplicates (517) are non-inplace, each returning a new frame. The store._raw_cache frame is never written. Output is a fresh frame per call (not cached), so callers may mutate the result freely.",
+      "notes": "Exact static column list: ['tickerIBES','permno','time_avail_m'] (line 515). Pruning IBESCRSPLinkingTable.parquet to these three columns is safe for this helper; note DatasetStore.get (lines 415-421) reads the same three columns for LINKED_TICKER_MONTHLY_DATASETS, so the pruned set is consistent engine-wide."
+    },
+    {
+      "op_name": "_to_wide_panel",
+      "lines": "521-529",
+      "footprint": [
+        {
+          "dataset": "long_df (tree argument, NOT a store dataset)",
+          "columns": [
+            "time_avail_m",
+            "permno",
+            "<value_col \u2014 dynamic, passed by caller>"
+          ],
+          "via": "tree-arg (no store data loads)"
+        }
+      ],
+      "link_tables": "none \u2014 pure pivot; no joins",
+      "writes_global_or_derived_cache": "none. Reads only store.template_index and store.template_columns (line 526) and store.template_columns.dtype (line 528); never load_raw/get/_derived_cache.",
+      "reads_current_factor": false,
+      "mutates_inputs": "no \u2014 line 523 `long_df.loc[:, ['time_avail_m','permno',value_col]]` copies before .dropna/.pivot_table/.reindex (all return new objects). Line 528 `panel.columns = panel.columns.astype(...)` assigns to the freshly built panel, not to long_df. long_df can be shared from a memo cache (e.g. the _derived_cache 'analyst_value_signals' frame) without a defensive copy.",
+      "notes": "Column list is PARTIALLY DYNAMIC: 'time_avail_m' and 'permno' are static; the third column is the value_col parameter chosen at each call site (line 523). Any pruning of a frame destined for _to_wide_panel must preserve time_avail_m, permno, and whatever value_col the specific caller passes. store.template_index / store.template_columns are only read (reindex/astype), never modified."
+    },
+    {
+      "op_name": "_get_derived_cache",
+      "lines": "1212-1219",
+      "footprint": [],
+      "link_tables": "none",
+      "writes_global_or_derived_cache": "Creates and returns store._derived_cache itself: getattr(store,'_derived_cache',None) at line 1215; if absent, setattr(store,'_derived_cache',{}) at lines 1217-1218. Returns the mutable dict by reference \u2014 it does not read/write any specific key; key management is entirely in callers (e.g. 'analyst_value_signals' at 1305/1421, 'recommendation_monthly' at 1429). Note: DatasetStore.clear() (lines 391-395) clears only _raw_cache and _panel_cache, NOT _derived_cache \u2014 the derived cache survives store.clear().",
+      "reads_current_factor": false,
+      "mutates_inputs": "no DataFrame args consumed \u2014 mutates only the store object itself (attaches the _derived_cache dict attribute at line 1218 on first call). No frame is touched.",
+      "notes": "Per-store-instance cache, not module-level: two DatasetStore instances have independent _derived_cache dicts. Because the dict is returned by reference, every caller shares one mutable namespace; keys observed in the file: 'analyst_value_signals' (1305/1421), 'recommendation_monthly' (1429+)."
+    },
+    {
+      "op_name": "_prepare_analyst_value_signals",
+      "lines": "1301-1422",
+      "footprint": [
+        {
+          "dataset": "_derived_cache['analyst_value_signals']",
+          "columns": [
+            "permno",
+            "time_avail_m",
+            "AnalystValue",
+            "AOP",
+            "PredictedFE"
+          ],
+          "via": "derived_cache (read at 1305-1306 on hit; write at 1421)"
+        },
+        {
+          "dataset": "IBES_EPS_Unadj.parquet",
+          "columns": [
+            "tickerIBES",
+            "time_avail_m",
+            "fpi",
+            "statpers",
+            "fpedats",
+            "meanest"
+          ],
+          "via": "load_raw (line 1308, with .copy())"
+        },
+        {
+          "dataset": "monthlyCRSP.parquet",
+          "columns": [
+            "permno",
+            "time_avail_m",
+            "prc",
+            "shrout"
+          ],
+          "via": "load_raw (lines 1326-1330)"
+        },
+        {
+          "dataset": "m_aCompustat.parquet",
+          "columns": [
+            "permno",
+            "time_avail_m",
+            "ceq",
+            "ib",
+            "ibcom",
+            "ni",
+            "sale",
+            "datadate",
+            "dvc",
+            "at"
+          ],
+          "via": "load_raw (lines 1331-1335)"
+        },
+        {
+          "dataset": "IBESCRSPLinkingTable.parquet",
+          "columns": [
+            "tickerIBES",
+            "permno",
+            "time_avail_m"
+          ],
+          "via": "helper-map (_ibes_permno_month_map at line 1336 \u2192 load_raw)"
+        }
+      ],
+      "link_tables": "Yes \u2014 IBESCRSPLinkingTable via _ibes_permno_month_map (line 1336). Join chain: link \u22c8 monthlyCRSP on ['permno','time_avail_m'] inner (1338) \u22c8 m_aCompustat on ['permno','time_avail_m'] inner (1339); then IBES estimate slices (froe1/froe2/ltg) merged on ['tickerIBES','time_avail_m'] left (1344-1346); self-merge of 12-month-lagged FROE1 on ['permno','time_avail_m'] left (1394-1397). The gvkey\u2192permno map is NOT used.",
+      "writes_global_or_derived_cache": "Reads and writes _derived_cache key 'analyst_value_signals' (read 1305-1306, write 1421 via _get_derived_cache at 1304). No module-level dict.",
+      "reads_current_factor": false,
+      "mutates_inputs": "no store-cached frame is mutated \u2014 defensive copies throughout: IBES raw is copied immediately at line 1308 (`store.load_raw(...).copy()`) before boolean-mask slices; froe1/froe2/ltg column assignments (1315, 1320) hit fresh frames produced by `[mask][[cols]].rename(...)`; crsp/comp use `.loc[:, cols]` (1328, 1333) which copy the raw-cache frames; all later column assignments (1342, 1349-1366, 1381-1398, 1402-1414) land on merge products or explicit .copy() results (1341, 1343, 1348, 1378, 1394, 1414, 1417). Helpers are clean too: _trim_by_group copies at line 1231; _ols_predictions_by_group (1266-1298) only reads df and returns a new Series. Takes no DataFrame tree args (only store). CAVEAT for memo sharing: on cache hit, line 1306 returns the stored 'expanded' frame BY REFERENCE with no copy \u2014 three factor consumers share one object, so downstream code must not mutate it in place (current consumers route it through _to_wide_panel, which copies at its .loc select, so this is currently safe).",
+      "notes": "PRUNING TRAP: line 1333 selects 'ib' and 'ni' from m_aCompustat, but neither column is referenced anywhere in lines 1334-1422 (only ibcom/ceq/sale/datadate/dvc/at are used in computations at 1342-1374). They are dead selections \u2014 pruning them from the parquet raises KeyError at line 1333 unless that line is edited in the same change. 'datadate' is consumed only at line 1374 via pd.to_datetime(df['datadate']).dt.month. 'statpers'/'fpedats' must be datetime-typed (uses .dt.month at 1311 and Timedelta comparison at 1313). Output: 12-month forward-filled expansion (lines 1415-1420) of ['permno','time_avail_m','AnalystValue','AOP','PredictedFE'] \u2014 the long-form table later pivoted per-signal by _to_wide_panel. Not current_factor-dependent: signature is (store) only; output identical for all three consuming factors (AnalystValue, AOP, PredictedFE)."
+    },
+    {
+      "op_name": "_prepare_recommendation_monthly",
+      "lines": "1425-1439",
+      "footprint": [
+        {
+          "dataset": "IBES_Recommendations.parquet",
+          "columns": [
+            "tickerIBES",
+            "amaskcd",
+            "time_avail_m",
+            "anndats",
+            "ireccd"
+          ],
+          "via": "load_raw"
+        }
+      ],
+      "link_tables": "none \u2014 output is keyed on (tickerIBES, time_avail_m); the IBESCRSPLinkingTable join to permno happens in downstream callers, not here",
+      "writes_global_or_derived_cache": "_derived_cache(store): reads/writes key 'recommendation_monthly' (read line 1429-1430, write line 1438)",
+      "reads_current_factor": false,
+      "mutates_inputs": "no \u2014 copies defensively at line 1434 (.loc[:, [5 cols]].copy() on the load_raw frame); sort_values (1435) and both groupby aggregations (1436-1437) return new frames. Raw cache untouched. Note: cache HIT at line 1430 returns the cached frame by reference (no copy), so callers must not mutate the returned frame.",
+      "notes": "Column list is a static literal at lines 1432-1434; nothing dynamic. Logic: sort by (tickerIBES, amaskcd, time_avail_m, anndats), take last ireccd per analyst-month (1436), then mean ireccd per firm-month (1437). Output columns: tickerIBES, time_avail_m, ireccd."
+    },
+    {
+      "op_name": "_prepare_monthly_stock_base",
+      "lines": "1442-1456",
+      "footprint": [
+        {
+          "dataset": "monthlyCRSP.parquet",
+          "columns": [
+            "permno",
+            "time_avail_m",
+            "exchcd",
+            "shrcd",
+            "prc",
+            "ret",
+            "retx"
+          ],
+          "via": "load_raw"
+        }
+      ],
+      "link_tables": "none",
+      "writes_global_or_derived_cache": "_derived_cache(store): reads/writes key 'monthly_stock_base' (read line 1446-1447, write line 1455)",
+      "reads_current_factor": false,
+      "mutates_inputs": "no \u2014 .loc[:, [7-col list]] at line 1451 materializes a new frame (list-column .loc always copies), and drop_duplicates (1452) / sort_values (1453) are non-inplace. Raw _raw_cache frame untouched. No explicit .copy() call, but none needed. Cache hit at 1447 returns by reference \u2014 shared frame; downstream merges (lines 1471, 1493) are safe because .merge returns new frames.",
+      "notes": "Column list is a static literal at line 1451. drop_duplicates on ['permno','time_avail_m'] keep='first', then sort by ['permno','time_avail_m']. This is the shared base consumed by both dividend preparers below."
+    },
+    {
+      "op_name": "_prepare_cash_dividend_monthly",
+      "lines": "1459-1473",
+      "footprint": [
+        {
+          "dataset": "CRSPdistributions.parquet",
+          "columns": [
+            "cd2",
+            "exdt",
+            "divamt",
+            "permno"
+          ],
+          "via": "load_raw"
+        },
+        {
+          "dataset": "monthlyCRSP.parquet",
+          "columns": [
+            "permno",
+            "time_avail_m",
+            "exchcd",
+            "shrcd",
+            "prc",
+            "ret",
+            "retx"
+          ],
+          "via": "helper: _prepare_monthly_stock_base(store) / derived_cache key 'monthly_stock_base'"
+        }
+      ],
+      "link_tables": "none \u2014 merge is permno+time_avail_m between CRSP tables (line 1471: on=['permno','time_avail_m'], how='left')",
+      "writes_global_or_derived_cache": "_derived_cache(store): reads/writes key 'cash_dividend_monthly' (read 1463-1464, write 1472); indirectly reads/writes key 'monthly_stock_base' via _prepare_monthly_stock_base (line 1471)",
+      "reads_current_factor": false,
+      "mutates_inputs": "no \u2014 copies defensively at line 1466 (store.load_raw(...).copy()) and again at 1467 after the cd2 filter; column assignment dist['time_avail_m']=... at 1468 lands on the copy. Merge at 1471 is called on the shared monthly_stock_base frame but .merge returns a new frame, so the shared base is not mutated. Cache hit at 1464 returns by reference.",
+      "notes": "IMPORTANT for pruning: line 1466 copies the ENTIRE raw CRSPdistributions frame (.copy() with no column subset), but only cd2 (isin([2,3]) filter, 1467), exdt (converted to month-start time_avail_m, 1468), divamt (dropna 1469, groupby-sum 1470), and permno (groupby key 1470) are actually consumed \u2014 the raw file may safely be pruned to those 4 columns FOR THIS FUNCTION ONLY (but _prepare_regular_dividend_monthly also needs cd1 and cd3 from the same shared _raw_cache entry; prune the union: permno, exdt, divamt, cd1, cd2, cd3). 'time_avail_m' in the distributions leg is DERIVED from exdt, not read from the parquet. Output: monthly_stock_base columns + divamt (NaN where no cash dividend)."
+    },
+    {
+      "op_name": "_prepare_regular_dividend_monthly",
+      "lines": "1476-1499",
+      "footprint": [
+        {
+          "dataset": "CRSPdistributions.parquet",
+          "columns": [
+            "cd1",
+            "cd2",
+            "cd3",
+            "exdt",
+            "divamt",
+            "permno"
+          ],
+          "via": "load_raw"
+        },
+        {
+          "dataset": "monthlyCRSP.parquet",
+          "columns": [
+            "permno",
+            "time_avail_m",
+            "exchcd",
+            "shrcd",
+            "prc",
+            "ret",
+            "retx"
+          ],
+          "via": "helper: _prepare_monthly_stock_base(store) / derived_cache key 'monthly_stock_base'"
+        }
+      ],
+      "link_tables": "none \u2014 merge is on=['permno','time_avail_m'], how='left' (lines 1493-1497)",
+      "writes_global_or_derived_cache": "_derived_cache(store): reads/writes key 'regular_dividend_monthly_yearly' when yearly_only=True, else 'regular_dividend_monthly' (key chosen line 1479; read 1481-1482, write 1498); indirectly reads/writes key 'monthly_stock_base' via _prepare_monthly_stock_base (line 1493)",
+      "reads_current_factor": false,
+      "mutates_inputs": "no \u2014 copies defensively at line 1484 (store.load_raw(...).copy()), re-copies after each boolean filter (1485, 1487); column assignment dist['time_avail_m']=... at 1488 is on the copy. groupby-sum (1490), sort_values (1491), groupby.first (1492) all return new frames; merge (1493) does not mutate the shared monthly_stock_base. Cache hit at 1482 returns by reference.",
+      "notes": "Behavior forks on the yearly_only KWARG (not current_factor): filter is cd1==1 & cd2==2 always (1485); yearly_only additionally requires cd3.isin([3,4,5]) (1486-1487) and uses the separate cache key. cd3 is consumed even when yearly_only=False (groupby key 1490, sort key 1491, and carried into the output at 1494). 'time_avail_m' on the distributions leg is derived from exdt (1488). Dedup semantics: per (permno,time_avail_m), divamt summed within cd3, then the row with the LOWEST cd3 wins via sort+first (1491-1492). Output columns: monthly_stock_base columns + cd3 + divamt. All column lists static literals; nothing dynamic. Pruning CRSPdistributions must keep the union with _prepare_cash_dividend_monthly since both read the same shared _raw_cache entry: permno, exdt, divamt, cd1, cd2, cd3."
+    },
+    {
+      "op_name": "_op_brand_invest_signal",
+      "lines": "1512-1564 (helpers: _to_wide_panel 521-529; store.load_raw 397-405)",
+      "footprint": [
+        {
+          "dataset": "a_aCompustat.parquet",
+          "columns": [
+            "gvkey",
+            "permno",
+            "time_avail_m",
+            "fyear",
+            "datadate",
+            "xad",
+            "xad0",
+            "at",
+            "sic"
+          ],
+          "via": "load_raw (line 1513) + static .loc[:, [...]] column list at line 1514, then .copy(). All 9 columns are genuinely consumed: gvkey (groupby 1520, sort 1516, dedup 1559-1561), permno (output key 1552, dedup 1562), time_avail_m (1552, offset 1556), fyear (sort key 1516), datadate (December filter 1550, dedup tiebreak 1559), xad (brand-capital recursion 1522-1530, 1538), xad0 (BrandInvest numerator 1540), at (scaling denominator 1531-1537), sic (utility/financial exclusion 1517, 1548). _to_wide_panel then reads only [time_avail_m, permno, BrandInvest] from the derived long frame."
+        }
+      ],
+      "link_tables": "none \u2014 a_aCompustat already carries both gvkey and permno; the gvkey->permno resolution is done inside the function via drop_duplicates on [gvkey,time_avail_m] then [permno,time_avail_m] (lines 1559-1562). No IBESCRSPLinkingTable, no m_aCompustat gvkey map.",
+      "writes_global_or_derived_cache": "none. Only implicit read of store._raw_cache['a_aCompustat.parquet'] via load_raw. Does not touch store._derived_cache or store._panel_cache or any module-level dict.",
+      "reads_current_factor": false,
+      "mutates_inputs": "no \u2014 defensive copy at lines 1513-1515 (.loc[:, list] already yields a new frame, followed by explicit .copy()); re-sorted with .copy() at 1516; each groupby group re-copied at 1521 before column assignment (1539-1540). Consumes no tree-arg DataFrames (positional args swallowed by *_). Safe to share the raw parquet frame from a memo cache without copying.",
+      "notes": "Column list is fully static (literal at line 1514) \u2014 pruning a_aCompustat below these 9 columns raises KeyError at the .loc. Empty-result fallback (line 1544) builds an all-NaN panel from store.template_index/template_columns. Uses store.template_index/template_columns via _to_wide_panel reindex (526-528)."
+    },
+    {
+      "op_name": "_op_equity_duration_signal",
+      "lines": "1567-1622 (helpers: _to_wide_panel 521-529; store.load_raw 397-405)",
+      "footprint": [
+        {
+          "dataset": "a_aCompustat.parquet",
+          "columns": [
+            "gvkey",
+            "permno",
+            "time_avail_m",
+            "fyear",
+            "datadate",
+            "ceq",
+            "ib",
+            "sale",
+            "prcc_f",
+            "csho"
+          ],
+          "via": "load_raw (line 1568) + static .loc[:, [...]] column list at line 1569, then .copy(). All 10 consumed: gvkey (sort 1571, groupby shifts 1578-1579, dedup 1613, tiebreak 1617), permno (output key 1606, dedup 1618), time_avail_m (1606, offsets 1610), fyear (sort key 1571), datadate (dedup tiebreak 1613/1617), ceq (RoE denominator via lag 1578/1580, BV seed 1586-1587), ib (tempRoE numerator 1580), sale (growth 1579/1581), prcc_f + csho (tempME market equity 1603). _to_wide_panel reads only [time_avail_m, permno, EquityDuration]."
+        }
+      ],
+      "link_tables": "none \u2014 resolves gvkey->permno internally via the two-stage drop_duplicates at lines 1613-1619 (with an _is_na sort key preferring non-missing EquityDuration per permno-month). No external link table.",
+      "writes_global_or_derived_cache": "none. Only store._raw_cache['a_aCompustat.parquet'] via load_raw. No _derived_cache keys.",
+      "reads_current_factor": false,
+      "mutates_inputs": "no \u2014 defensive copy at lines 1568-1570 (.loc slice + .copy()), re-copied after sort at 1571. All ~44 temp columns (tempRoE1..10, temp_g_eq1..10, tempBV1..10, tempCD1..10, tempME, EquityDuration) are assigned onto the local copy only. No tree-arg DataFrames consumed.",
+      "notes": "Static column list (line 1569). Constants hard-coded: autocorr_roe=0.57, cost_equity=0.12, autocorr_growth=0.24, longrun_growth=0.06 (1573-1576). Deterministic given the one input file."
+    },
+    {
+      "op_name": "_op_abnormal_accruals_signal",
+      "lines": "1625-1669 (helpers: _trim_by_group 1222-1236; _ols_residuals_by_groups 1239-1263; _expand_hold_months 532-539; _to_wide_panel 521-529; store.load_raw 397-405)",
+      "footprint": [
+        {
+          "dataset": "a_aCompustat.parquet",
+          "columns": [
+            "gvkey",
+            "permno",
+            "time_avail_m",
+            "fyear",
+            "datadate",
+            "at",
+            "oancf",
+            "fopt",
+            "act",
+            "che",
+            "lct",
+            "dlc",
+            "ib",
+            "sale",
+            "ppegt",
+            "ni",
+            "sic"
+          ],
+          "via": "load_raw (line 1626) + static .loc[:, [...]] at line 1628, then .copy(). CAUTION for pruning: 'ni' and 'datadate' appear in the .loc list but are never referenced after selection (no df['ni']/df['datadate'] use in 1630-1669) \u2014 they must still exist in the parquet or the .loc raises KeyError; safe to remove only if line 1628 is edited too. Actually-consumed: gvkey (sort/groupby 1636-1640), permno (merge key 1635, exchange filter output, dedup 1666, output 1667), time_avail_m (merge key 1635, output 1667), fyear (consecutive-year lag guard 1637-1640, trim group 1654, OLS group 1660, NASDAQ<1982 filter 1665, dedup 1666), at/act/che/lct/dlc/sale (lagged via l1_* 1639-1640; accrual construction 1642-1653), oancf (primary CFO 1649), fopt (fallback CFO 1642), ib (accruals numerator 1651), ppegt (tempPPE 1653), sic (sic2 industry grouping 1655)."
+        },
+        {
+          "dataset": "monthlyCRSP.parquet",
+          "columns": [
+            "permno",
+            "time_avail_m",
+            "exchcd"
+          ],
+          "via": "load_raw (line 1631) + static .loc[:, [...]] at line 1632 + drop_duplicates([permno,time_avail_m]) at 1633; merged onto Compustat on [permno,time_avail_m] how='left' (1635); exchcd used only for the (exchcd==3 & fyear<1982) exclusion at line 1665."
+        }
+      ],
+      "link_tables": "none \u2014 joins a_aCompustat directly to monthlyCRSP on [permno, time_avail_m] (line 1635); a_aCompustat already carries permno. No IBESCRSPLinkingTable, no gvkey map.",
+      "writes_global_or_derived_cache": "none. Only store._raw_cache keys 'a_aCompustat.parquet' and 'monthlyCRSP.parquet' via load_raw. No _derived_cache.",
+      "reads_current_factor": false,
+      "mutates_inputs": "no \u2014 Compustat slice is defensively copied at 1626-1629 (.loc + .copy()). The CRSP slice (1630-1634) has no explicit .copy(), but .loc[:, col-list] returns a new frame and .drop_duplicates() returns another new frame; 'exch' is then only the right side of a merge (1635) and never written to, so the cached raw monthlyCRSP frame is untouched. _trim_by_group copies internally (out = df.copy(), line 1231); _ols_residuals_by_groups returns a fresh Series without touching df (1248-1263); _expand_hold_months copies its base slice (line 534). No tree-arg DataFrames consumed.",
+      "notes": "AbnormalAccruals = residuals of tempAccruals on [tempInvTA, tempDelRev, tempPPE] within (fyear, sic2) groups, min_obs=6 (1656-1662), re-masked by group valid-count>=6 (1663-1664). Both .loc column lists are static literals (1628, 1632)."
+    },
+    {
+      "op_name": "_op_analyst_value_signal",
+      "lines": "1672-1673 (delegates entirely to _prepare_analyst_value_signals 1301-1422 and _to_wide_panel 521-529; also uses _ibes_permno_month_map 512-518, _trim_by_group 1222-1236, _ols_predictions_by_group 1266-1298, _get_derived_cache 1212-1219)",
+      "footprint": [
+        {
+          "dataset": "IBES_EPS_Unadj.parquet",
+          "columns": [
+            "fpi",
+            "statpers",
+            "fpedats",
+            "tickerIBES",
+            "time_avail_m",
+            "meanest"
+          ],
+          "via": "load_raw + whole-frame .copy() at line 1308 (no column slice at load time). Columns proven read: fpi (filters '1'/'2'/'0' at 1310/1317/1322), statpers (May-month filter + 30-day horizon check 1311-1313), fpedats (notna + horizon check 1312-1313), tickerIBES + time_avail_m + meanest (selected/renamed to feps1/feps2/LTG at 1314/1317-1319/1322-1324). Because the load is whole-file, pruning the parquet to these 6 columns cannot KeyError this kernel \u2014 but verify no OTHER consumer of IBES_EPS_Unadj needs more before pruning the file itself."
+        },
+        {
+          "dataset": "monthlyCRSP.parquet",
+          "columns": [
+            "permno",
+            "time_avail_m",
+            "prc",
+            "shrout"
+          ],
+          "via": "load_raw (1327) + static .loc[:, [...]] at 1328 + drop_duplicates (1329). prc.abs()*shrout -> mve_permco (1351); shrout also scales feps1/feps2 into FROE1/FROE2/FROE3 (1355, 1358, 1364)."
+        },
+        {
+          "dataset": "m_aCompustat.parquet",
+          "columns": [
+            "permno",
+            "time_avail_m",
+            "ceq",
+            "ib",
+            "ibcom",
+            "ni",
+            "sale",
+            "datadate",
+            "dvc",
+            "at"
+          ],
+          "via": "load_raw (1332) + static .loc[:, [...]] at 1333 + drop_duplicates (1334). CAUTION for pruning: 'ib' and 'ni' are in the .loc list but never referenced afterward in this function \u2014 required to exist in the parquet unless line 1333 is edited. Actually-consumed: ceq (BM, ceq_ave, ceq1..3 chains 1349-1366, mask 1369-1370), ibcom (payout k sign switch 1353, ROE 1354), sale (SG 60-month growth 1342), datadate (fiscal-month>=6 mask 1374), dvc + at (payout ratio k 1353), permno/time_avail_m (merge keys 1338-1340)."
+        },
+        {
+          "dataset": "IBESCRSPLinkingTable.parquet",
+          "columns": [
+            "tickerIBES",
+            "permno",
+            "time_avail_m"
+          ],
+          "via": "helper-map _ibes_permno_month_map (line 1336 -> 512-518): .loc[:, [tickerIBES, permno, time_avail_m]].dropna(subset=[permno]).drop_duplicates([tickerIBES, time_avail_m])."
+        }
+      ],
+      "link_tables": "YES \u2014 IBESCRSPLinkingTable via _ibes_permno_month_map: link merged with CRSP and Compustat on [permno, time_avail_m] (inner joins, 1338-1340), then IBES estimate frames (feps1/feps2/LTG) merged on [tickerIBES, time_avail_m] (left joins, 1344-1346). No gvkey->permno map needed (m_aCompustat already has permno).",
+      "writes_global_or_derived_cache": "YES \u2014 store._derived_cache key 'analyst_value_signals': read-through at 1304-1306, written at 1421. The cache dict lives per-store (setattr on the DatasetStore, 1212-1219), not module-level. This key is SHARED with _op_analyst_optimism_ratio (1676-1677) and _op_predicted_forecast_error (1680-1681), which read AOP / PredictedFE from the same cached long frame. Also implicit _raw_cache keys: IBES_EPS_Unadj.parquet, monthlyCRSP.parquet, m_aCompustat.parquet, IBESCRSPLinkingTable.parquet.",
+      "reads_current_factor": false,
+      "mutates_inputs": "no \u2014 but with a sharing caveat. Raw frames: IBES copied at 1308; CRSP/Compustat/link slices are fresh frames from .loc[col-list] + dropna/drop_duplicates; every subsequent merge/sort returns new frames, so store._raw_cache is never mutated. The cached long frame is returned BY REFERENCE (line 1306, no copy), and _to_wide_panel does not mutate it (pure .loc[:, [time_avail_m, permno, 'AnalystValue']] -> dropna -> pivot_table -> reindex, 521-529) \u2014 pivot_table allocates a new wide frame. So today the shared cache entry is safe without defensive copies, but ONLY because all three consumers go through the non-mutating _to_wide_panel; any future consumer that writes columns onto _prepare_analyst_value_signals' return value would corrupt AOP/PredictedFE for its siblings.",
+      "notes": "Cached long frame columns: [permno, time_avail_m, AnalystValue, AOP, PredictedFE], 12-month hold expansion applied before caching (1414-1421); _op_analyst_value_signal pivots only the AnalystValue column. Signal math: 3-stage residual-income value scaled by mve_permco (1380-1386), June-observation-only (1343), FErr trimmed 1/99 pct within month (1399), PredictedFE via _ols_predictions_by_group fit on lagged ranks / scored on current ranks per month, min_obs=5 (1405-1412). All column lists are static literals except the IBES whole-file load noted above."
+    },
+    {
+      "op_name": "_op_analyst_optimism_ratio",
+      "lines": "1676-1677 (delegates to _prepare_analyst_value_signals at 1301-1422 and _to_wide_panel at 521-529; _ibes_permno_month_map at 512-518; _get_derived_cache at 1212-1219)",
+      "footprint": [
+        {
+          "dataset": "IBES_EPS_Unadj.parquet",
+          "columns": [
+            "tickerIBES",
+            "time_avail_m",
+            "fpi",
+            "statpers",
+            "fpedats",
+            "meanest"
+          ],
+          "via": "load_raw (line 1308, inside _prepare_analyst_value_signals; .copy() taken immediately)"
+        },
+        {
+          "dataset": "monthlyCRSP.parquet",
+          "columns": [
+            "permno",
+            "time_avail_m",
+            "prc",
+            "shrout"
+          ],
+          "via": "load_raw (line 1327; .loc column-select at 1328)"
+        },
+        {
+          "dataset": "m_aCompustat.parquet",
+          "columns": [
+            "permno",
+            "time_avail_m",
+            "ceq",
+            "ib",
+            "ibcom",
+            "ni",
+            "sale",
+            "datadate",
+            "dvc",
+            "at"
+          ],
+          "via": "load_raw (line 1332; .loc column-select at 1333). WARNING for pruning: 'ib' and 'ni' are selected at line 1333 but never referenced afterward in the function \u2014 they must stay in the parquet (or line 1333 must be edited) or the .loc raises KeyError."
+        },
+        {
+          "dataset": "IBESCRSPLinkingTable.parquet",
+          "columns": [
+            "tickerIBES",
+            "permno",
+            "time_avail_m"
+          ],
+          "via": "helper-map (_ibes_permno_month_map, lines 512-518, called at 1336; uses load_raw)"
+        }
+      ],
+      "link_tables": "IBESCRSPLinkingTable via _ibes_permno_month_map (line 1336): link merged to monthlyCRSP and m_aCompustat on ['permno','time_avail_m'] (lines 1338-1340); IBES estimate frames (froe1/froe2/ltg) merged on ['tickerIBES','time_avail_m'] (lines 1344-1346). No gvkey\u2192permno map.",
+      "writes_global_or_derived_cache": "store._derived_cache['analyst_value_signals']: read at 1305-1306, written at 1421 (shared with _op_analyst_value_signal and _op_predicted_forecast_error). Also implicitly populates store._raw_cache for the 4 parquets via load_raw.",
+      "reads_current_factor": false,
+      "mutates_inputs": "No. Signature (*_, store, **__) consumes no tree args. ibes is .copy()'d at 1308; crsp/comp/link are produced by .loc column-selection + drop_duplicates/dropna (new frames, lines 1327-1335, 513-518), never assigned into. The _derived_cache['analyst_value_signals'] frame is returned uncopied (1306/1422) but _to_wide_panel only does .loc-select/dropna/pivot_table (lines 522-528) \u2014 no in-place mutation \u2014 so the memoized long frame is safe to share across the three consumer ops without defensive copies.",
+      "notes": "All column lists are static literals; nothing dynamic. Dtype requirements: statpers/fpedats/time_avail_m/datadate must be datetime-like (uses .dt.month at 1311/1317/1343, pd.to_datetime(datadate).dt.month at 1374, pd.DateOffset arithmetic at 1315/1320/1395/1418, Timedelta comparison at 1313). fpi compared as string ('1','2','0'). mve_permco is COMPUTED here (shrout*|prc|, line 1351), not read from CRSP. Output column extracted: 'AOP' (computed line 1392). Final wide pivot keys: time_avail_m x permno."
+    },
+    {
+      "op_name": "_op_predicted_forecast_error",
+      "lines": "1680-1681 (identical call path to _op_analyst_optimism_ratio: _prepare_analyst_value_signals 1301-1422, _to_wide_panel 521-529; PredictedFE computed at 1405-1412 via _ols_predictions_by_group 1266-1298)",
+      "footprint": [
+        {
+          "dataset": "IBES_EPS_Unadj.parquet",
+          "columns": [
+            "tickerIBES",
+            "time_avail_m",
+            "fpi",
+            "statpers",
+            "fpedats",
+            "meanest"
+          ],
+          "via": "load_raw (line 1308, shared prep; .copy() taken)"
+        },
+        {
+          "dataset": "monthlyCRSP.parquet",
+          "columns": [
+            "permno",
+            "time_avail_m",
+            "prc",
+            "shrout"
+          ],
+          "via": "load_raw (line 1327)"
+        },
+        {
+          "dataset": "m_aCompustat.parquet",
+          "columns": [
+            "permno",
+            "time_avail_m",
+            "ceq",
+            "ib",
+            "ibcom",
+            "ni",
+            "sale",
+            "datadate",
+            "dvc",
+            "at"
+          ],
+          "via": "load_raw (line 1332). Same pruning warning as _op_analyst_optimism_ratio: 'ib' and 'ni' listed in the .loc at 1333 but unused downstream \u2014 dropping them from the parquet without editing 1333 raises KeyError."
+        },
+        {
+          "dataset": "IBESCRSPLinkingTable.parquet",
+          "columns": [
+            "tickerIBES",
+            "permno",
+            "time_avail_m"
+          ],
+          "via": "helper-map (_ibes_permno_month_map, lines 512-518, called at 1336)"
+        }
+      ],
+      "link_tables": "IBESCRSPLinkingTable via _ibes_permno_month_map: joins on ['permno','time_avail_m'] to CRSP/Compustat (1338-1340) and ['tickerIBES','time_avail_m'] to IBES frames (1344-1346). No gvkey map.",
+      "writes_global_or_derived_cache": "store._derived_cache['analyst_value_signals']: read 1305-1306, write 1421 (shared key \u2014 whichever of the three analyst ops runs first pays the cost; the others read the cached frame). Implicit store._raw_cache population via load_raw.",
+      "reads_current_factor": false,
+      "mutates_inputs": "No. No tree args consumed (*_ ignored). Same evidence as _op_analyst_optimism_ratio: ibes copied at 1308, other raws accessed only through .loc column-selections producing new frames; the cached long frame is only read by _to_wide_panel (non-mutating .loc/dropna/pivot_table, 522-528).",
+      "notes": "Identical footprint and cache behavior to _op_analyst_optimism_ratio; only the value_col differs ('PredictedFE' vs 'AOP'). PredictedFE depends on FErr trimming (_trim_by_group at 1399, copies via out = df.copy() at 1231) and cross-sectional OLS per time_avail_m (1405-1412). Because the prep is a single shared cache entry, column pruning must satisfy the UNION of needs of AnalystValue, AOP, and PredictedFE \u2014 they are inseparable at the footprint level."
+    },
+    {
+      "op_name": "_op_frontier_signal",
+      "lines": "1684-1751 (helpers: _get_ff48_func 187-199, module-global _FF48_FUNC declared at 176; _to_wide_panel 521-529)",
+      "footprint": [
+        {
+          "dataset": "monthlyCRSP.parquet",
+          "columns": [
+            "permno",
+            "time_avail_m",
+            "mve_permco",
+            "sicCRSP"
+          ],
+          "via": "load_raw (line 1686; .loc column-select at 1687). Note: unlike the analyst prep, this op reads the raw 'mve_permco' column directly."
+        },
+        {
+          "dataset": "m_aCompustat.parquet",
+          "columns": [
+            "permno",
+            "time_avail_m",
+            "at",
+            "ceq",
+            "dltt",
+            "capx",
+            "sale",
+            "xrd",
+            "xad",
+            "ppent",
+            "ebitda"
+          ],
+          "via": "load_raw (line 1691; .loc column-select at 1692). All 11 columns are genuinely used (1696-1709, 1750)."
+        }
+      ],
+      "link_tables": "None. monthlyCRSP and m_aCompustat merged directly on ['permno','time_avail_m'] (inner, line 1695). No IBESCRSPLinkingTable, no gvkey map. Non-dataset dependency: imports PYCODE_ROOT/utils/sicff.py at runtime (lines 192-197) for the FF48 SIC classifier \u2014 a file dependency a pruner/packager must preserve.",
+      "writes_global_or_derived_cache": "Module-level global _FF48_FUNC (line 176): lazily written on first call inside _get_ff48_func (lines 190-198), read thereafter \u2014 this is process-global, shared across all stores. No _derived_cache usage. Implicit store._raw_cache population via load_raw.",
+      "reads_current_factor": false,
+      "mutates_inputs": "No. No tree args consumed (*_ ignored). Both raw frames are accessed via .loc column-selection (new frames, 1687/1692), then df = df.merge(comp,...).copy() at 1695 before any column assignment; further .copy() at 1713. All writes (1696-1716, 1747, 1749) land on that private copy. Raw cache frames untouched.",
+      "notes": "Column lists are static. Dtypes: time_avail_m must be datetime (.dt.year/.dt.month at 1696, 1720); sicCRSP passed through pd.to_numeric(errors='coerce') at 1712 so string or numeric SIC both work. The ff48_* dummy columns (1731-1733) are derived, not raw columns. Per-month expanding 60-month rolling OLS loop over unique_dates (1719-1747) is the hot path. Output: 'Frontier' = -(YtempBM - logmefit_NS), filtered to ceq>0 (1749-1750), pivoted via _to_wide_panel."
+    },
+    {
+      "op_name": "_op_rd_ability_signal",
+      "lines": "1754-1834 (helper: _to_wide_panel 521-529)",
+      "footprint": [
+        {
+          "dataset": "a_aCompustat.parquet",
+          "columns": [
+            "gvkey",
+            "permno",
+            "time_avail_m",
+            "fyear",
+            "datadate",
+            "xrd",
+            "sale"
+          ],
+          "via": "load_raw (line 1755; .loc column-select at 1755-1756 followed by .copy() at 1757). All 7 columns are used: gvkey (groupby/sort 1758/1761/1772, dedupe key 1827-1828), permno (dedupe 1830-1831, pivot key), time_avail_m (quantile groupby 1814, DateOffset expansion 1824, dedupe/pivot key), fyear (sort 1758, gap detection 1775/1794), datadate (tie-break sort for dedupe at 1827), xrd/sale (signal construction 1759-1767, 1809-1818)."
+        }
+      ],
+      "link_tables": "None. gvkey and permno both come from columns already present in a_aCompustat; no IBESCRSPLinkingTable and no external gvkey\u2192permno map is joined.",
+      "writes_global_or_derived_cache": "None. No _derived_cache, no module globals. Only implicit store._raw_cache population via load_raw('a_aCompustat.parquet').",
+      "reads_current_factor": false,
+      "mutates_inputs": "No. No tree args consumed (*_ ignored). Defensive copy at line 1757 (.loc column-select + .copy()) before any assignment; re-copied after sort at 1758. Inside the per-gvkey loop, group = group.copy() at 1773 before adding tempXLag, so groupby views of df are never written. gamma/temp_mean are fresh local Series (1770-1771). The 12-month expansion works on base = df[[...]].copy() (1820) and per-offset piece = base.copy() (1823). Raw cache frame untouched.",
+      "notes": "Column list is static. Dtype requirements: time_avail_m datetime (pd.DateOffset at 1824); fyear numeric (year-gap arithmetic at 1794); xrd/sale numeric. datadate is only a sort key (1827) \u2014 any orderable dtype works, but it must exist. Heavy nested python loop: 5 lags x per-gvkey x per-row 8-year rolling OLS (1769-1805). Dedupe semantics: after 12-month forward expansion, keep last datadate per (gvkey, time_avail_m) then first per (permno, time_avail_m) (1827-1832). Output value_col: 'RDAbility'."
+    },
+    {
+      "op_name": "_op_ms_signal",
+      "lines": "1837-1972",
+      "footprint": [
+        {
+          "dataset": "m_aCompustat.parquet",
+          "columns": [
+            "permno",
+            "gvkey",
+            "time_avail_m",
+            "datadate",
+            "at",
+            "ceq",
+            "ni",
+            "oancf",
+            "fopt",
+            "wcapch",
+            "ib",
+            "dp",
+            "xrd",
+            "capx",
+            "xad",
+            "revt"
+          ],
+          "via": "load_raw"
+        },
+        {
+          "dataset": "monthlyCRSP.parquet",
+          "columns": [
+            "permno",
+            "time_avail_m",
+            "mve_permco",
+            "sicCRSP"
+          ],
+          "via": "load_raw"
+        },
+        {
+          "dataset": "m_QCompustat.parquet",
+          "columns": [
+            "gvkey",
+            "time_avail_m",
+            "niq",
+            "atq",
+            "saleq",
+            "oancfy",
+            "capxy",
+            "xrdq",
+            "fyearq",
+            "fqtr",
+            "datafqtr",
+            "datadateq"
+          ],
+          "via": "load_raw"
+        }
+      ],
+      "link_tables": "none \u2014 no IBESCRSPLinkingTable and no _gvkey_permno_month_map; the gvkey->permno linkage is intrinsic to m_aCompustat carrying both keys. Joins: comp<->crsp on [permno, time_avail_m] (inner, line 1903); comp<->qcomp on [gvkey, time_avail_m] (left, line 1904).",
+      "writes_global_or_derived_cache": "none for _derived_cache/_panel_cache. Only intrinsic store._raw_cache population via load_raw for the 3 parquets (DatasetStore.load_raw, lines 397-405).",
+      "reads_current_factor": false,
+      "mutates_inputs": "no \u2014 takes no tree args (*_ ignored). Cached raws are sliced via .loc[:, [cols]] (copy) at lines 1888-1889, 1893-1894, 1898-1899, then drop_duplicates/merge produce new frames; working frame explicitly .copy()'d at lines 1906, 1909, 1915, 1918 before any column assignment. All ~30 column assignments (lines 1910-1969) hit the local copy only.",
+      "notes": "IMPORTANT for pruning: the .loc column lists at lines 1889 and 1899 are literal and will KeyError if any listed column is missing, but several selected columns are never used downstream: from m_aCompustat, 'at','ni','oancf','ib','dp','xrd','capx','revt' are selected yet unused (used ones: permno,gvkey,time_avail_m,datadate,ceq,fopt,wcapch,xad); from m_QCompustat, 'fyearq','datafqtr','datadateq' are selected yet unused (used: gvkey,time_avail_m,niq,atq,saleq,oancfy,capxy,xrdq,fqtr). If you prune the parquet you must either keep these columns or also edit the .loc lists. datadate consumed at lines 1937 and 1964 (pd.to_datetime on it); time_avail_m must be datetime64 (dt.month at 1965, date_range at 1865). Output: _to_wide_panel(df[['permno','time_avail_m','MS']], 'MS') at line 1972; _to_wide_panel (lines 521-529) reads only store.template_index/template_columns, no datasets. All column lists static; nothing dynamic."
+    },
+    {
+      "op_name": "_op_feps_signal",
+      "lines": "2007-2011",
+      "footprint": [
+        {
+          "dataset": "IBES_EPS_Unadj.parquet",
+          "columns": [
+            "fpi",
+            "tickerIBES",
+            "time_avail_m",
+            "meanest"
+          ],
+          "via": "load_raw"
+        },
+        {
+          "dataset": "IBESCRSPLinkingTable.parquet",
+          "columns": [
+            "tickerIBES",
+            "permno",
+            "time_avail_m"
+          ],
+          "via": "helper-map (_ibes_permno_month_map, lines 512-518)"
+        }
+      ],
+      "link_tables": "IBESCRSPLinkingTable via _ibes_permno_month_map; inner merge on [tickerIBES, time_avail_m] (line 2010).",
+      "writes_global_or_derived_cache": "none for _derived_cache (_ibes_permno_month_map is NOT memoized \u2014 rebuilt every call). Intrinsic store._raw_cache population for IBES_EPS_Unadj.parquet and IBESCRSPLinkingTable.parquet via load_raw.",
+      "reads_current_factor": false,
+      "mutates_inputs": "no \u2014 no tree args consumed. Line 2009 does row-mask + column-select + explicit .copy() on the cached raw; _ibes_permno_month_map returns .loc/.dropna/.drop_duplicates copies; merge (2010) and rename (2011, non-inplace) create new frames. Cached raw never touched in place.",
+      "notes": "fpi filter compares against the STRING '1' (line 2009) \u2014 fpi must survive pruning with its string dtype. meanest renamed to FEPS at line 2011 (rename copy, not inplace). Final _to_wide_panel selects only [time_avail_m, permno, FEPS]. All column references static."
+    },
+    {
+      "op_name": "_op_binary_recommendation_level",
+      "lines": "2014-2026",
+      "footprint": [
+        {
+          "dataset": "IBES_Recommendations.parquet",
+          "columns": [
+            "tickerIBES",
+            "amaskcd",
+            "time_avail_m",
+            "anndats",
+            "ireccd"
+          ],
+          "via": "derived_cache (_prepare_recommendation_monthly, lines 1425-1439, which does load_raw + .loc on exactly these 5 columns at 1432-1434)"
+        },
+        {
+          "dataset": "IBESCRSPLinkingTable.parquet",
+          "columns": [
+            "tickerIBES",
+            "permno",
+            "time_avail_m"
+          ],
+          "via": "helper-map (_ibes_permno_month_map, lines 512-518)"
+        }
+      ],
+      "link_tables": "IBESCRSPLinkingTable via _ibes_permno_month_map; inner merge on [tickerIBES, time_avail_m] (line 2025).",
+      "writes_global_or_derived_cache": "READS and WRITES store._derived_cache key 'recommendation_monthly' via _prepare_recommendation_monthly (read at 1429-1430, write at 1438; cache dict created lazily by _get_derived_cache at 1212-1219 as an attribute on the store instance). Also intrinsic _raw_cache population for both parquets.",
+      "reads_current_factor": false,
+      "mutates_inputs": "no \u2014 defensive .copy() at line 2021 on the cached 'recommendation_monthly' frame BEFORE the .loc column assignments at 2022-2024; merge at 2025 creates a new frame. The shared derived-cache frame is never mutated. Behavior depends on injected low_threshold/high_threshold kwargs (not current_factor).",
+      "notes": "anndats is consumed only as a sort tiebreaker inside the helper (sort_values at 1435 before groupby-last at 1436) \u2014 required in the parquet, dropped after aggregation. Cached frame columns after helper: [tickerIBES, time_avail_m, ireccd]. Final _to_wide_panel selects [time_avail_m, permno, ConsRecomm] from the merged frame. All column lists static."
+    },
+    {
+      "op_name": "_op_recommendation_change_indicator",
+      "lines": "2029-2048",
+      "footprint": [
+        {
+          "dataset": "IBES_Recommendations.parquet",
+          "columns": [
+            "tickerIBES",
+            "amaskcd",
+            "time_avail_m",
+            "anndats",
+            "ireccd"
+          ],
+          "via": "derived_cache (_prepare_recommendation_monthly, lines 1425-1439, load_raw + .loc on exactly these 5 columns at 1432-1434)"
+        },
+        {
+          "dataset": "IBESCRSPLinkingTable.parquet",
+          "columns": [
+            "tickerIBES",
+            "permno",
+            "time_avail_m"
+          ],
+          "via": "helper-map (_ibes_permno_month_map, lines 512-518)"
+        }
+      ],
+      "link_tables": "IBESCRSPLinkingTable via _ibes_permno_month_map; inner merge on [tickerIBES, time_avail_m] (line 2047).",
+      "writes_global_or_derived_cache": "READS and WRITES store._derived_cache key 'recommendation_monthly' via _prepare_recommendation_monthly (read 1429-1430, write 1438). Shares this cached frame with _op_binary_recommendation_level. Also intrinsic _raw_cache population for both parquets.",
+      "reads_current_factor": false,
+      "mutates_inputs": "no \u2014 defensive .copy() at line 2036 before sort_values (2037, non-inplace reassignment of the local name) and column assignments 'ireccd_lag' (2038) and value_col (2041/2044). The shared derived-cache frame is never mutated. Behavior depends on injected direction and lag_months kwargs (not current_factor).",
+      "notes": "Output column name is DYNAMIC between exactly two literals decided by the 'direction' kwarg: 'UpRecomm' (direction=='up', line 2040) or 'DownRecomm' (direction=='down', line 2043); any other direction raises ValueError (2046). Underlying dataset columns are fully static regardless. groupby-shift keyed on tickerIBES (2038) with lag_months periods. Final _to_wide_panel gets rec[['permno','time_avail_m', value_col]] (line 2048)."
+    },
+    {
+      "op_name": "_op_dividend_initiation_flag",
+      "lines": "2051-2062 (helpers: _prepare_cash_dividend_monthly 1459-1473, _prepare_monthly_stock_base 1442-1456, _get_derived_cache 1212-1219, _to_wide_panel 521-529)",
+      "footprint": [
+        {
+          "dataset": "CRSPdistributions.parquet",
+          "columns": [
+            "permno",
+            "cd2",
+            "exdt",
+            "divamt"
+          ],
+          "via": "load_raw (full-frame .copy() at line 1466 inside _prepare_cash_dividend_monthly; only these 4 columns are then accessed: cd2 filter line 1467, exdt->time_avail_m line 1468, divamt lines 1469-1470, permno groupby line 1470)"
+        },
+        {
+          "dataset": "monthlyCRSP.parquet",
+          "columns": [
+            "permno",
+            "time_avail_m",
+            "exchcd",
+            "shrcd",
+            "prc",
+            "ret",
+            "retx"
+          ],
+          "via": "derived_cache (_prepare_monthly_stock_base line 1449-1451 does an explicit .loc[:, 7-col list]; ALL 7 must exist or the shared helper KeyErrors. This op itself consumes only permno + time_avail_m from the base \u2014 divamt comes from distributions; exchcd/shrcd/prc/ret/retx are carried but unread here)"
+        }
+      ],
+      "link_tables": "none \u2014 no IBESCRSPLinkingTable, no gvkey->permno map; keyed purely on (permno, time_avail_m)",
+      "writes_global_or_derived_cache": "reads/writes store._derived_cache keys 'cash_dividend_monthly' (line 1463/1472) and transitively 'monthly_stock_base' (line 1446/1455); _to_wide_panel touches store.template_index/template_columns only, never _panel_cache",
+      "reads_current_factor": false,
+      "mutates_inputs": "no args consumed (signature *_: Any, **__: Any ignores tree args); no cache mutation \u2014 defensive .copy() of the derived-cache frame at line 2052 before any column assignment; helpers copy raw frames (line 1466 .copy(); line 1450 .loc[:, list] yields a new frame)",
+      "notes": "All column lists are static literals \u2014 nothing dynamic. Output DivInit = 6-month rolling max of first-month-of-initiation flag (divamt>0 with prior 24m rolling div sum ~0). Safe to serve 'cash_dividend_monthly'/'monthly_stock_base' from a shared memo cache without extra copies because the op copies at entry."
+    },
+    {
+      "op_name": "_op_dividend_omission_flag",
+      "lines": "2065-2117 (helpers: _prepare_cash_dividend_monthly 1459-1473, _prepare_monthly_stock_base 1442-1456, _to_wide_panel 521-529)",
+      "footprint": [
+        {
+          "dataset": "CRSPdistributions.parquet",
+          "columns": [
+            "permno",
+            "cd2",
+            "exdt",
+            "divamt"
+          ],
+          "via": "load_raw (full-frame .copy() line 1466; identical access pattern to _op_dividend_initiation_flag \u2014 cd2 filter, exdt->time_avail_m, divamt sum, permno groupby)"
+        },
+        {
+          "dataset": "monthlyCRSP.parquet",
+          "columns": [
+            "permno",
+            "time_avail_m",
+            "exchcd",
+            "shrcd",
+            "prc",
+            "ret",
+            "retx"
+          ],
+          "via": "derived_cache (_prepare_monthly_stock_base explicit .loc selection lines 1449-1451 requires all 7; op consumes only permno + time_avail_m \u2014 all rolling/shift logic lines 2070-2116 operates on divamt-derived columns grouped by permno)"
+        }
+      ],
+      "link_tables": "none",
+      "writes_global_or_derived_cache": "reads/writes store._derived_cache keys 'cash_dividend_monthly' and 'monthly_stock_base' (shared with _op_dividend_initiation_flag \u2014 first of the two ops to run populates them)",
+      "reads_current_factor": false,
+      "mutates_inputs": "no args consumed; no \u2014 copies defensively at line 2066 (.copy() on the cached frame) before the ~20 in-place column assignments on the local df (lines 2067-2116)",
+      "notes": "Static column lists throughout. Builds omit_3/omit_6/omit_12 from rolling counts of dividend-paid indicator, then DivOmit = (2-month rolling sum of omitnow == 1). Shares both derived-cache keys with the initiation op, so co-scheduling them reuses the same prepared frame."
+    },
+    {
+      "op_name": "_op_seasonal_dividend_indicator",
+      "lines": "2120-2143 (helpers: _prepare_regular_dividend_monthly 1476-1499 with yearly_only=False, _prepare_monthly_stock_base 1442-1456, _to_wide_panel 521-529)",
+      "footprint": [
+        {
+          "dataset": "CRSPdistributions.parquet",
+          "columns": [
+            "permno",
+            "cd1",
+            "cd2",
+            "cd3",
+            "exdt",
+            "divamt"
+          ],
+          "via": "load_raw (full-frame .copy() line 1484 inside _prepare_regular_dividend_monthly; cd1==1 & cd2==2 filter line 1485, exdt->time_avail_m line 1488, groupby permno/cd3/time_avail_m sum of divamt lines 1490-1492, final select ['permno','time_avail_m','cd3','divamt'] line 1494)"
+        },
+        {
+          "dataset": "monthlyCRSP.parquet",
+          "columns": [
+            "permno",
+            "time_avail_m",
+            "exchcd",
+            "shrcd",
+            "prc",
+            "ret",
+            "retx"
+          ],
+          "via": "derived_cache (_prepare_monthly_stock_base explicit 7-col .loc lines 1449-1451 \u2014 all 7 required by the helper; the op consumes permno + time_avail_m from the base and cd3 + divamt from the distributions merge; exchcd/shrcd/prc/ret/retx unread here)"
+        }
+      ],
+      "link_tables": "none",
+      "writes_global_or_derived_cache": "reads/writes store._derived_cache keys 'regular_dividend_monthly' (line 1479-1482/1498) and transitively 'monthly_stock_base'",
+      "reads_current_factor": false,
+      "mutates_inputs": "no args consumed; no \u2014 copies defensively at line 2121 (.copy() of cached frame). The inplace=True drop at line 2125 and the .loc assignments (line 2142) operate on that local copy / its .copy()'d filtered descendants (lines 2124, 2129, 2130), never on the cached frame",
+      "notes": "Static column lists. Uses cd3 (dividend frequency code): keeps first div onward per permno, ffills cd3, drops cd3==2 and cd3>=6, DivSeason=1 when a payment occurred at seasonal lags {2,5,8,11} appropriate to frequency, else 0 if any payment in trailing 12m, else NaN. Distinct cache key from _op_divyieldst_signal ('regular_dividend_monthly' vs '..._yearly') \u2014 they do NOT share the prepared frame, only 'monthly_stock_base'."
+    },
+    {
+      "op_name": "_op_divyieldst_signal",
+      "lines": "2146-2166 (helpers: _prepare_regular_dividend_monthly 1476-1499 with yearly_only=True \u2014 extra cd3.isin([3,4,5]) filter line 1487, _prepare_monthly_stock_base 1442-1456, _to_wide_panel 521-529)",
+      "footprint": [
+        {
+          "dataset": "CRSPdistributions.parquet",
+          "columns": [
+            "permno",
+            "cd1",
+            "cd2",
+            "cd3",
+            "exdt",
+            "divamt"
+          ],
+          "via": "load_raw (full-frame .copy() line 1484; same six columns as the seasonal op \u2014 cd3 is used both for the yearly_only filter at line 1487 and the groupby/select at lines 1490-1494)"
+        },
+        {
+          "dataset": "monthlyCRSP.parquet",
+          "columns": [
+            "permno",
+            "time_avail_m",
+            "exchcd",
+            "shrcd",
+            "prc",
+            "ret",
+            "retx"
+          ],
+          "via": "derived_cache (_prepare_monthly_stock_base explicit 7-col .loc lines 1449-1451 \u2014 all 7 required by the helper; this op consumes permno, time_avail_m AND prc (line 2159: Edy1 = Ediv1 / prc.abs()), plus cd3 + divamt from the merge; exchcd/shrcd/ret/retx unread here)"
+        }
+      ],
+      "link_tables": "none",
+      "writes_global_or_derived_cache": "reads/writes store._derived_cache keys 'regular_dividend_monthly_yearly' (line 1479: key differs when yearly_only=True) and transitively 'monthly_stock_base'",
+      "reads_current_factor": false,
+      "mutates_inputs": "no args consumed; no \u2014 copies defensively at line 2147 (.copy() of cached frame); subsequent .loc assignments (2156-2158, 2164) and the filter-copy at 2153 act on local frames only",
+      "notes": "Static column lists. The ONLY one of the four that reads prc. Expected next dividend Ediv1 = divamt shifted by frequency-dependent lag (2/5/11 via cd3), yield = Ediv1/|prc|, DivYieldST = cross-sectional tercile (pd.qcut per time_avail_m, lines 2161-2163) + 1, with 0 for Edy1==0 rows; rows with NaN DivYieldST dropped before pivot. Uses a different derived-cache key than _op_seasonal_dividend_indicator, so the distributions frame is prepared (and cached) twice if both run."
+    },
+    {
+      "op_name": "_op_sum_scaled_revisions",
+      "lines": "2260-2292 (helpers: _ibes_permno_month_map 512-518, _to_wide_panel 521-529)",
+      "footprint": [
+        {
+          "dataset": "IBES_EPS_Unadj.parquet",
+          "columns": [
+            "fpi",
+            "fpedats",
+            "statpers",
+            "tickerIBES",
+            "time_avail_m",
+            "meanest"
+          ],
+          "via": "load_raw"
+        },
+        {
+          "dataset": "monthlyCRSP.parquet",
+          "columns": [
+            "permno",
+            "time_avail_m",
+            "prc"
+          ],
+          "via": "load_raw"
+        },
+        {
+          "dataset": "IBESCRSPLinkingTable.parquet",
+          "columns": [
+            "tickerIBES",
+            "permno",
+            "time_avail_m"
+          ],
+          "via": "helper-map"
+        }
+      ],
+      "link_tables": "IBESCRSPLinkingTable via _ibes_permno_month_map(store) at line 2279; joined to EPS estimates on ['tickerIBES','time_avail_m'] (line 2281) then to CRSP on ['permno','time_avail_m'] (line 2284). No gvkey map.",
+      "writes_global_or_derived_cache": "none (_derived_cache untouched; only load_raw's first-load population of store._raw_cache for the two parquets)",
+      "reads_current_factor": false,
+      "mutates_inputs": "no \u2014 full defensive copy of the cached IBES raw frame at line 2261 (.copy()), re-copied after filter (2262) and after sort (2268); the in-place assignments (line 2263 'tmp', 2269-2270 lags, 2272 .loc meanest fill) hit only that copy. crsp (2274-2278) is a .loc column-select + drop_duplicates, both new frames, never assigned into. df assignments (2286-2290) are on merge output. Tree args ignored (*_ discarded).",
+      "notes": "Exact IBES columns read: fpi filter '1' (2262), fpedats/statpers 30-day horizon test (2264), fpedats equality for stale-estimate fill (2271), meanest lag-fill (2269-2272). Column subset passed onward is ['tickerIBES','time_avail_m','meanest'] (2280). Pruning IBES_EPS_Unadj to the 6 listed columns is safe: line 2261 copies the whole frame but only those 6 are ever referenced. monthlyCRSP prc used as prc_lag1 abs denominator (2287-2288). REV6 = rolling 7-term sum with min_count=7 (2289-2290). Output panel via _to_wide_panel consuming ['time_avail_m','permno','REV6'] only; reads store.template_index/template_columns, writes no panel cache. All column lists static."
+    },
+    {
+      "op_name": "_op_change_in_recommendation_signal",
+      "lines": "2295-2302 (helpers: _prepare_recommendation_monthly 1425-1439, _ibes_permno_month_map 512-518, _to_wide_panel 521-529)",
+      "footprint": [
+        {
+          "dataset": "IBES_Recommendations.parquet",
+          "columns": [
+            "tickerIBES",
+            "amaskcd",
+            "time_avail_m",
+            "anndats",
+            "ireccd"
+          ],
+          "via": "derived_cache"
+        },
+        {
+          "dataset": "IBESCRSPLinkingTable.parquet",
+          "columns": [
+            "tickerIBES",
+            "permno",
+            "time_avail_m"
+          ],
+          "via": "helper-map"
+        }
+      ],
+      "link_tables": "IBESCRSPLinkingTable via _ibes_permno_month_map(store), inner-joined at line 2300 on ['tickerIBES','time_avail_m']. No gvkey map.",
+      "writes_global_or_derived_cache": "reads AND writes store._derived_cache key 'recommendation_monthly' (via _prepare_recommendation_monthly: read at 1429-1430, write at 1438 on first call). _get_derived_cache (1212-1219) lazily attaches the dict to the store instance \u2014 per-store, not module-level.",
+      "reads_current_factor": false,
+      "mutates_inputs": "no \u2014 the cached derived frame is defensively copied at line 2296 (.copy()) before mutation; opscore assignment (2297) and diff assignment (2299) hit the copy; sort_values at 2298 returns a new frame (not inplace). Inside the helper, IBES_Recommendations is .loc-selected + .copy() at 1432-1434 before any transform, so the raw cache is untouched. Tree args ignored.",
+      "notes": "Derived cache table = per-(tickerIBES,amaskcd,time_avail_m) last ireccd by anndats (1435-1436) then per-(tickerIBES,time_avail_m) mean ireccd (1437) \u2014 so anndats and amaskcd are consumed only inside the helper. Op consumes only tickerIBES/time_avail_m/ireccd from the cached frame. opscore = 6 - ireccd (2297); signal = groupby(tickerIBES) diff (2299). _to_wide_panel consumes only ['time_avail_m','permno','ChangeInRecommendation'] from the merged frame despite extra columns being carried. All column lists static."
+    },
+    {
+      "op_name": "_op_earnings_forecast_disparity_signal",
+      "lines": "2305-2329 (helpers: _ibes_permno_month_map 512-518, _to_wide_panel 521-529)",
+      "footprint": [
+        {
+          "dataset": "IBES_EPS_Unadj.parquet",
+          "columns": [
+            "fpi",
+            "fpedats",
+            "statpers",
+            "tickerIBES",
+            "time_avail_m",
+            "meanest"
+          ],
+          "via": "load_raw"
+        },
+        {
+          "dataset": "IBES_UnadjustedActuals.parquet",
+          "columns": [
+            "tickerIBES",
+            "time_avail_m",
+            "fy0a"
+          ],
+          "via": "load_raw"
+        },
+        {
+          "dataset": "IBESCRSPLinkingTable.parquet",
+          "columns": [
+            "tickerIBES",
+            "permno",
+            "time_avail_m"
+          ],
+          "via": "helper-map"
+        }
+      ],
+      "link_tables": "IBESCRSPLinkingTable via _ibes_permno_month_map(store) at line 2318, used as the left/base frame; short-horizon (2319), long-horizon (2320), and actuals (2321) all left-joined onto it on ['tickerIBES','time_avail_m']. No gvkey map.",
+      "writes_global_or_derived_cache": "none (_derived_cache untouched; only load_raw's first-load population of store._raw_cache)",
+      "reads_current_factor": false,
+      "mutates_inputs": "no \u2014 line 2306 binds the SHARED cached raw frame without .copy(), but it is only read: boolean-mask + column-select at 2307-2311 yields a new frame (plus explicit .copy() at 2311); fpi=='0' slice at 2312-2314 yields a new frame and .rename returns another; no assignment ever targets the raw frame. actuals (2315-2317) is a .loc column-select (new frame). Column assignments at 2322 (tempShort) and 2327 (EarningsForecastDisparity) hit merge outputs from 2319-2321. Tree args ignored.",
+      "notes": "IBES_EPS_Unadj is read under two filters: fpi=='1' with fpedats>statpers+30d for the 1-yr meanest (2307-2311), and fpi=='0' for meanest renamed to fgr5yr (2312-2314) \u2014 both need meanest; fpedats/statpers are needed only by the fpi=='1' branch but must survive pruning of the shared file. fy0a is the FY0 actual: zero-guard at 2323, denominator abs(fy0a) at 2325. Signal = fgr5yr - 100*(meanest-fy0a)/|fy0a| (2327). _to_wide_panel consumes ['time_avail_m','permno','EarningsForecastDisparity']. All column lists static."
+    },
+    {
+      "op_name": "_op_excluded_expenses_signal",
+      "lines": "2332-2347 (helpers: _gvkey_permno_month_map 503-509, _ibes_permno_month_map 512-518, _to_wide_panel 521-529)",
+      "footprint": [
+        {
+          "dataset": "m_QCompustat.parquet",
+          "columns": [
+            "gvkey",
+            "time_avail_m",
+            "epspiq"
+          ],
+          "via": "load_raw"
+        },
+        {
+          "dataset": "m_aCompustat.parquet",
+          "columns": [
+            "gvkey",
+            "permno",
+            "time_avail_m"
+          ],
+          "via": "helper-map"
+        },
+        {
+          "dataset": "IBESCRSPLinkingTable.parquet",
+          "columns": [
+            "tickerIBES",
+            "permno",
+            "time_avail_m"
+          ],
+          "via": "helper-map"
+        },
+        {
+          "dataset": "IBES_UnadjustedActuals.parquet",
+          "columns": [
+            "tickerIBES",
+            "time_avail_m",
+            "int0a"
+          ],
+          "via": "load_raw"
+        }
+      ],
+      "link_tables": "BOTH. gvkey->permno map (m_aCompustat via _gvkey_permno_month_map) left-joined at line 2334 on ['gvkey','time_avail_m'] to attach permno; then IBESCRSPLinkingTable via _ibes_permno_month_map left-joined at line 2335 on ['permno','time_avail_m'] to attach tickerIBES; actuals joined at 2339 on ['tickerIBES','time_avail_m'].",
+      "writes_global_or_derived_cache": "none (_derived_cache untouched; only load_raw's first-load population of store._raw_cache)",
+      "reads_current_factor": false,
+      "mutates_inputs": "no \u2014 qcomp at 2333 is a .loc column-select (new frame, never assigned into before being replaced by merge output at 2334); every subsequent frame is a merge output; assignments at 2340 (ExclExp) and 2345 (clip overwrite) hit the merged frame only. Both map helpers return fresh dropna/drop_duplicates frames each call. Tree args ignored.",
+      "notes": "ExclExp = int0a (IBES street FY0 actual) minus epspiq (Compustat quarterly EPS incl. extraordinary items), line 2340, then winsorized in-sample at the 1st/99th percentiles of non-null values (2341-2345). Chained left joins mean permno can be NaN after 2334; _to_wide_panel drops NaN permno rows. _to_wide_panel consumes ['time_avail_m','permno','ExclExp']. All column lists static. Note _gvkey_permno_month_map keeps the FIRST permno per (gvkey,time_avail_m) via drop_duplicates keep='first' (line 508) \u2014 dedup semantics matter if pruning changes row order upstream."
+    },
+    {
+      "op_name": "_op_chforecast_accrual_signal",
+      "lines": "2350-2386",
+      "footprint": [
+        {
+          "dataset": "IBES_EPS_Unadj.parquet",
+          "columns": [
+            "fpi",
+            "tickerIBES",
+            "time_avail_m",
+            "meanest"
+          ],
+          "via": "load_raw"
+        },
+        {
+          "dataset": "m_aCompustat.parquet",
+          "columns": [
+            "permno",
+            "time_avail_m",
+            "act",
+            "che",
+            "lct",
+            "dlc",
+            "txp",
+            "at"
+          ],
+          "via": "load_raw"
+        },
+        {
+          "dataset": "IBESCRSPLinkingTable.parquet",
+          "columns": [
+            "tickerIBES",
+            "permno",
+            "time_avail_m"
+          ],
+          "via": "helper-map"
+        }
+      ],
+      "link_tables": "IBESCRSPLinkingTable via _ibes_permno_month_map (lines 512-518): comp LEFT-merged with map on ['permno','time_avail_m'] (line 2360), then LEFT-merged with IBES on ['tickerIBES','time_avail_m'] (line 2361). No gvkey map.",
+      "writes_global_or_derived_cache": "none \u2014 never calls store.get or _get_derived_cache. Only side effect: load_raw read-through population of store._raw_cache keys 'IBES_EPS_Unadj.parquet' (2351), 'm_aCompustat.parquet' (2355), 'IBESCRSPLinkingTable.parquet' (via helper, 2360). _to_wide_panel does not write _panel_cache.",
+      "reads_current_factor": false,
+      "mutates_inputs": "no args consumed (*_ discarded) and no store-cached frame mutated: IBES slice defensively copied at line 2352 (.copy() after mask+column select); comp built via .loc-list/.drop_duplicates/.sort_values chain (2356-2358, each returns a new frame); all column assignments (2374, 2375, 2378, 2379, 2382-2384) land on df, a merge product created at 2360.",
+      "notes": "fpi column is filter-only (fpi == '1', line 2352). Spine is m_aCompustat (left merges), sorted ['permno','time_avail_m'] at 2358; shift(12)/shift(1) at 2365-2373 and 2378 are positional within permno groups and rely on that sort surviving the left merges. Column list is fully static \u2014 safe to prune to the listed columns. Output column name: ChForecastAccrual."
+    },
+    {
+      "op_name": "_op_fgr5yr_lag_signal",
+      "lines": "2389-2407",
+      "footprint": [
+        {
+          "dataset": "IBES_EPS_Unadj.parquet",
+          "columns": [
+            "fpi",
+            "tickerIBES",
+            "time_avail_m",
+            "meanest"
+          ],
+          "via": "load_raw"
+        },
+        {
+          "dataset": "m_aCompustat.parquet",
+          "columns": [
+            "permno",
+            "time_avail_m",
+            "ceq",
+            "ib",
+            "txdi",
+            "dv",
+            "sale",
+            "ni",
+            "dp"
+          ],
+          "via": "load_raw"
+        },
+        {
+          "dataset": "IBESCRSPLinkingTable.parquet",
+          "columns": [
+            "tickerIBES",
+            "permno",
+            "time_avail_m"
+          ],
+          "via": "helper-map"
+        }
+      ],
+      "link_tables": "IBESCRSPLinkingTable via _ibes_permno_month_map: comp INNER-merged with map on ['permno','time_avail_m'] (line 2397), then INNER-merged with IBES on ['tickerIBES','time_avail_m'] (line 2398). Plus a self-join on ['permno','lag6_date'] at 2404 (lag6_date derived at 2403, not a raw column). No gvkey map.",
+      "writes_global_or_derived_cache": "none \u2014 same pattern: only load_raw read-through into store._raw_cache keys 'IBES_EPS_Unadj.parquet' (2390), 'm_aCompustat.parquet' (2394), 'IBESCRSPLinkingTable.parquet' (2397). No _derived_cache/_panel_cache access.",
+      "reads_current_factor": false,
+      "mutates_inputs": "no args consumed (*_ discarded); no cached frame mutated. IBES slice: mask + column select + .rename (2391-2393, all return new frames, rename NOT inplace); comp: .loc-list + .drop_duplicates (2394-2396). Only in-place-style column assignment is df['lag6_date'] at 2403, but df at that point is merge(2398)->dropna(2399) output, a fresh frame. _expand_hold_months copies its input (lines 534, 536).",
+      "notes": "meanest is renamed to fgr5yr at 2391-2393 \u2014 raw column is 'meanest' (rows where fpi == '0'). ceq/ib/txdi/dv/sale/ni/dp are used ONLY as a dropna completeness screen (2399), never in arithmetic \u2014 they are still required columns. Signal computed only for June rows (2405) then expanded 12 hold-months via _expand_hold_months. Column list fully static. Output column: fgr5yrLag."
+    },
+    {
+      "op_name": "_op_sfe_signal",
+      "lines": "2410-2436",
+      "footprint": [
+        {
+          "dataset": "IBES_EPS_Unadj.parquet",
+          "columns": [
+            "fpi",
+            "statpers",
+            "fpedats",
+            "tickerIBES",
+            "time_avail_m",
+            "medest",
+            "numest"
+          ],
+          "via": "load_raw"
+        },
+        {
+          "dataset": "IBESCRSPLinkingTable.parquet",
+          "columns": [
+            "tickerIBES",
+            "permno",
+            "time_avail_m"
+          ],
+          "via": "helper-map"
+        },
+        {
+          "dataset": "monthlyCRSP.parquet",
+          "columns": [
+            "permno",
+            "time_avail_m",
+            "prc"
+          ],
+          "via": "load_raw"
+        },
+        {
+          "dataset": "m_aCompustat.parquet",
+          "columns": [
+            "permno",
+            "time_avail_m",
+            "datadate"
+          ],
+          "via": "load_raw"
+        }
+      ],
+      "link_tables": "IBESCRSPLinkingTable via _ibes_permno_month_map, with its time_avail_m RENAMED to prc_time (line 2420): IBES INNER-merged with map on ['tickerIBES','prc_time'] (2426), then with monthlyCRSP (time_avail_m also renamed prc_time, 2421-2423) on ['permno','prc_time'] (2427), then with m_aCompustat on ['permno','time_avail_m'] (2428). prc_time = time_avail_m - 3 months (2418). No gvkey map.",
+      "writes_global_or_derived_cache": "none \u2014 only load_raw read-through into store._raw_cache keys 'IBES_EPS_Unadj.parquet' (2411), 'IBESCRSPLinkingTable.parquet' (2420), 'monthlyCRSP.parquet' (2421), 'm_aCompustat.parquet' (2424). No _derived_cache/_panel_cache access.",
+      "reads_current_factor": false,
+      "mutates_inputs": "no args consumed (*_ discarded); no cached frame mutated. IBES slice .copy() at 2417 before prc_time assignment at 2418; link and crsp go through .rename (2420, 2421-2423 \u2014 new frames); comp at 2424 is a .loc column-slice that is only merged, never assigned to; df .copy() at 2429 before tempcoverage assignment (2430) and .copy() at 2433 before sfe assignment (2434).",
+      "notes": "statpers and fpedats are filter-only (statpers.dt.month == 3; fpedats notna and > statpers + 90d, lines 2413-2416) but must be present in the pruned frame. datadate is filter-only (December fiscal-year-ends, 2429) via pd.to_datetime \u2014 keep original dtype tolerant. numest drives the coverage median split (2430-2433, keep low-coverage half); sfe = medest / |prc| (2434). Expanded 12 hold-months. Column lists fully static. Output column: sfe."
+    },
+    {
+      "op_name": "_op_earnings_streak_signal",
+      "lines": "2439-2462",
+      "footprint": [
+        {
+          "dataset": "IBES_EPS_Adj.parquet",
+          "columns": [
+            "fpi",
+            "actual",
+            "meanest",
+            "price",
+            "anndats_act",
+            "statpers",
+            "tickerIBES"
+          ],
+          "via": "load_raw"
+        },
+        {
+          "dataset": "IBESCRSPLinkingTable.parquet",
+          "columns": [
+            "tickerIBES",
+            "permno",
+            "time_avail_m"
+          ],
+          "via": "helper-map"
+        }
+      ],
+      "link_tables": "IBESCRSPLinkingTable via _ibes_permno_month_map, used as the LEFT spine: map LEFT-merged with the surprise-streak table on ['tickerIBES','time_avail_m'] (line 2452), then ffilled within permno (2454-2455). No gvkey map.",
+      "writes_global_or_derived_cache": "none \u2014 only load_raw read-through into store._raw_cache keys 'IBES_EPS_Adj.parquet' (2440), 'IBESCRSPLinkingTable.parquet' (2452). No _derived_cache/_panel_cache access.",
+      "reads_current_factor": false,
+      "mutates_inputs": "no args consumed (*_ discarded); no cached frame mutated \u2014 full defensive .copy() at line 2440 immediately after load_raw, further .copy() at 2441, 2449, 2450; panel is the merge product (2452) and all assignments (2454, 2455, 2459, 2461 rename) act on it.",
+      "notes": "DYNAMIC-COLUMN CAVEAT: line 2440 .copy() copies ALL columns of IBES_EPS_Adj and line 2444 groupby(['tickerIBES','time_avail_m']).last() aggregates EVERY column present \u2014 the 7 listed are the provably-required set; any extra columns are carried through 2444 but never read afterwards (temp at 2450 selects only tickerIBES/time_avail_m/anndats_act/surp), so pruning to the 7 is behavior-preserving. The raw file's time_avail_m column (if any) is NOT a dependency \u2014 it is created/overwritten at 2442 from anndats_act BEFORE the groupby at 2444. fpi filter-only (== '6', 2441); statpers is a sort tiebreaker only (2443) but required. surp = (actual - meanest) / price (2445); streak filter keeps rows where sign(surp) equals its within-ticker lag (2447-2449); ffill within permno capped at 6 months since announcement (2454-2460). Output column: EarningsStreak (renamed from surp at 2461)."
+    },
+    {
+      "op_name": "ExpressionEvaluator.__init__",
+      "lines": "2671-2673",
+      "footprint": [],
+      "link_tables": "none \u2014 stores self.store and self.script_adapter references only; performs zero I/O and zero joins",
+      "writes_global_or_derived_cache": "none \u2014 does not touch _raw_cache, _panel_cache, or _derived_cache; merely holds the DatasetStore reference through which later calls reach those caches",
+      "reads_current_factor": false,
+      "mutates_inputs": "no args consumed \u2014 only binds references (self.store = store at line 2672, self.script_adapter = script_adapter at line 2673); no DataFrame is received or touched",
+      "notes": "Pure constructor. The store it captures is the one whose _panel_cache/_raw_cache/_derived_cache all downstream ops share, so any memoization layer wrapping the evaluator must treat store identity as part of the cache key."
+    },
+    {
+      "op_name": "ExpressionEvaluator.evaluate",
+      "lines": "2675-2698",
+      "footprint": [
+        {
+          "dataset": "<dynamic: expr['dataset'] of each 'var' node>",
+          "columns": [
+            "<expr['name']>",
+            "time_avail_m OR time_d OR exdt (category-dependent)",
+            "permno (when raw has it)",
+            "tickerIBES (LINKED_TICKER datasets)",
+            "gvkey (MONTHLY_PANEL datasets lacking permno)"
+          ],
+          "via": "get"
+        },
+        {
+          "dataset": "IBESCRSPLinkingTable.parquet",
+          "columns": [
+            "tickerIBES",
+            "permno",
+            "time_avail_m"
+          ],
+          "via": "helper-map"
+        },
+        {
+          "dataset": "m_aCompustat.parquet",
+          "columns": [
+            "gvkey",
+            "permno",
+            "time_avail_m"
+          ],
+          "via": "helper-map"
+        },
+        {
+          "dataset": "<output_dir>/<current_factor>.parquet",
+          "columns": [
+            "<all columns: wide month x permno panel>"
+          ],
+          "via": "load_raw"
+        }
+      ],
+      "link_tables": "BOTH, conditionally, via DatasetStore.get: IBESCRSPLinkingTable.parquet joined on ['tickerIBES','time_avail_m'] for the 4 LINKED_TICKER_MONTHLY_DATASETS (engine lines 415-421); gvkey->permno map built from m_aCompustat.parquet ['gvkey','permno','time_avail_m'] joined on ['gvkey','time_avail_m'] for MONTHLY_PANEL datasets lacking a permno column (lines 433-442). evaluate itself does no join \u2014 it inherits these through store.get at line 2680.",
+      "writes_global_or_derived_cache": "Indirectly reads/writes store._raw_cache keyed by dataset filename (load_raw lines 400-405) and store._panel_cache keyed by (dataset, variable) tuples (get lines 411-412 read; 429/450/455/469/483/486 write). Does NOT itself touch _derived_cache, but line 2698 injects store= into every operator call, which is exactly how the ~24 store-consuming ops reach _derived_cache via _get_derived_cache(store) (lines 1212-1219). No module-level dict.",
+      "reads_current_factor": true,
+      "mutates_inputs": "no \u2014 evaluate performs no in-place mutation itself, BUT it returns _panel_cache objects UNCOPIED: line 2680 returns store.get(...) which for a cache hit is `return self._panel_cache[key]` verbatim (line 412), and line 2695-2698 passes those same shared objects as positional args into operator functions with no defensive copy. Cache-sharing safety therefore depends entirely on each operator's own copy discipline, not on evaluate.",
+      "notes": "FOOTPRINT IS DYNAMIC \u2014 decided by the expression tree, not this function. Provable per 'var' node with dataset D, variable V (line 2680 -> store.get): (a) D in LINKED_TICKER_MONTHLY_DATASETS {IBES_EPS_Unadj, IBES_EPS_Adj, IBES_Recommendations, IBES_UnadjustedActuals}: raw columns used = tickerIBES, time_avail_m, V; plus IBESCRSPLinkingTable.parquet [tickerIBES, permno, time_avail_m]. (b) D in MONTHLY_PANEL_DATASETS {monthlyCRSP, m_aCompustat, a_aCompustat, m_QCompustat, CompustatQuarterly}: time_avail_m, permno, V; if raw lacks permno: gvkey, time_avail_m, V plus m_aCompustat [gvkey, permno, time_avail_m]. (c) D in MONTHLY_SERIES_DATASETS {monthlyFF, monthlyMarket, monthlyLiquidity}: time_avail_m, V. (d) D = CRSPdistributions.parquet: exdt, permno, V (exdt converted to month-start time_avail_m at line 460; aggfunc='sum' iff V=='divamt' else 'last', line 461). (e) D in DAILY_PANEL_DATASETS {dailyCRSP, dailyFF}: time_d, permno (if column present, line 474), V; else series path time_d, V. CRITICAL for pruning: load_raw (line 404) reads the FULL parquet with no columns= arg \u2014 pruned files must retain V plus the category's key columns or store.get raises KeyError at the .loc slices (lines 418, 423, 438, 444, 454, 463, 476, 485). Script-delegation path (lines 2690-2694): for ops in DELEGATED_SPECIAL_OPERATORS/SNAKE_TO_FACTOR, evaluate bypasses the tree entirely, runs the legacy predictor script via adapter.script_to_parquet(current_factor) (which reads pyData/Predictors/<factor>.csv columns [yyyymm, permno, <factor>], lines 634-639) and pd.read_parquet's the resulting wide file \u2014 output DIRECTLY depends on current_factor there. Line 2697 also stamps current_factor into every op's params. Additional dataset reads triggered by ops through the injected store (line 2698) belong to those ops' footprints, analyzed separately."
+    },
+    {
+      "op_name": "calculate_factors_from_plan",
+      "lines": "2724-2762",
+      "footprint": [
+        {
+          "dataset": "monthlyCRSP.parquet",
+          "columns": [
+            "permno",
+            "time_avail_m"
+          ],
+          "via": "load_raw"
+        },
+        {
+          "dataset": "<dynamic: every dataset pulled by evaluator.evaluate for each native factor's expression tree>",
+          "columns": [
+            "<see ExpressionEvaluator.evaluate entry \u2014 variable + category join keys>"
+          ],
+          "via": "get"
+        },
+        {
+          "dataset": "pyData/Predictors/<factor>.csv (script steps)",
+          "columns": [
+            "yyyymm",
+            "permno",
+            "<factor>"
+          ],
+          "via": "load_raw"
+        },
+        {
+          "dataset": "SignalMasterTable.parquet (bootstrap: existence check only; built by SignalMasterTable.py subprocess if absent)",
+          "columns": [
+            "<none read directly \u2014 subprocess footprint external to this file>"
+          ],
+          "via": "load_raw"
+        }
+      ],
+      "link_tables": "Indirectly both, inherited through evaluator.evaluate -> DatasetStore.get (IBESCRSPLinkingTable on ['tickerIBES','time_avail_m']; m_aCompustat gvkey-map on ['gvkey','time_avail_m']). The function body itself performs no joins.",
+      "writes_global_or_derived_cache": "Constructs the DatasetStore at line 2736 (fresh _raw_cache/_panel_cache). Line 2752 store.clear() clears ONLY _raw_cache and _panel_cache (DatasetStore.clear, lines 391-395). The setattr-attached _derived_cache (created lazily by _get_derived_cache at lines 1215-1218) is NOT cleared and persists across ALL native steps for the store's lifetime \u2014 derived long-form tables leak between stages by design/omission. Also adapter._executed_scripts (line 580) memoizes script runs across steps. No module-level dict touched.",
+      "reads_current_factor": false,
+      "mutates_inputs": "no tree args consumed (top-level driver). One real shared-state mutation via its helper _factor_to_wide_output (called line 2749): lines 2710-2711 execute wide.index.name='month' and wide.columns.name='permno' \u2014 reindex at line 2705 reuses the passed template_index/template_columns Index OBJECTS as the new frame's axes, so these assignments mutate the shared template Index objects in place; every _panel_cache panel was reindexed to those same objects (store.get lines 426, 447, 466), so their axis .name metadata changes too. Metadata-only \u2014 no cell data in any cached or evaluated frame is mutated (reindex and .astype('float32') at line 2712 both produce new frames). The `value` returned by evaluate (possibly a live _panel_cache object) is never written to.",
+      "notes": "Drives three executor kinds: 'bootstrap' (line 2742-2744: adapter.ensure_signal_master \u2014 checks INTERMEDIATE_DIR/SignalMasterTable.parquet exists, else runs SignalMasterTable.py subprocess whose read footprint is external to p1_factor_engine.py and unprovable here); 'native' (lines 2746-2753: evaluate per factor, current_factor=factor injected at line 2748, then write output_dir/<factor>.parquet via _write_factor_parquet lines 2715-2721); 'script' (lines 2755-2758: adapter.script_to_parquet runs the legacy predictor script as a subprocess \u2014 its raw-data footprint is external \u2014 then reads the long CSV [yyyymm, permno, <factor>] and writes output_dir/<factor>.parquet). build_output_template (line 2735 -> lines 650-656) is the ONLY column-pruned read in the whole engine: pd.read_parquet(monthlyCRSP.parquet, columns=['permno','time_avail_m']). IMPORTANT for memo-cache design: because _derived_cache survives store.clear() at line 2752 while _panel_cache does not, any op result cached in _derived_cache that embeds references to _panel_cache frames outlives the frames' eviction \u2014 safe only because entries are long-form copies today; a pruning layer must preserve that invariant."
+    }
+  ]
+}

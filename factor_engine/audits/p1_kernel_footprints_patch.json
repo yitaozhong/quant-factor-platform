@@ -1,0 +1,935 @@
+{
+  "_meta": {
+    "generated": "2026-08-01",
+    "method": "static trace + shim spot-check",
+    "purpose": "footprint patch for the 38 store-object-reading operators not covered by p1_kernel_footprints.json; consumed by p1_factor_dag.column_plan() for column pruning and cache-invalidation fingerprints",
+    "n_functions": 38,
+    "conventions": {
+      "footprint": "store-mediated reads only (store.get / store.load_raw). For store.get entries, 'columns' lists ONLY the value variable(s) \u2014 join keys (permno/time_avail_m/time_d/gvkey/tickerIBES) are added automatically downstream. For store.load_raw entries, 'columns' lists EVERY column the code subsequently touches, including filter/merge/assign keys.",
+      "direct_files": "file reads that bypass the DatasetStore (pyarrow/pandas read_parquet, bucket streaming). Exempt from store column-pruning; needed for cache-invalidation fingerprints. Paths are relative to Factor_Construction/. 'Data/daily_buckets' denotes the whole bucket=0..63 partitioned directory; iter_buckets always reads permno and time_d in addition to the listed value columns.",
+      "helper_caches": "reads made via helpers (_universe_masks -> _derived_cache['universe_masks'], _crsp_rows_mask -> 'crsp_rows_mask', _compustat_rows_mask -> 'm_aCompustat_rows_mask', smt_gvkey mask -> 'smt_gvkey_rows_mask', _get_derived_cache keys 'price_delay_long'/'ff3_idio_long') are attributed to every calling op even though only the first caller per store instance physically loads the file.",
+      "path_note": "the store's data_dir default is Open_Source_Asset_Pricing/Signals/pyData/Intermediate \u2014 direct_files entries under that directory touch the SAME physical files as the store datasets of the same name, just not through the store object."
+    },
+    "shim_spot_check": {
+      "date": "2026-08-01",
+      "ops": [
+        "smt_fill (STreversal)",
+        "firm_age (FirmAge)",
+        "cash_rdq_signal (Cash)",
+        "piotroski_score (PS)",
+        "hire_growth (hire)"
+      ],
+      "procedure": "monkeypatched DatasetStore.load_raw/get to log (dataset, variable) while inside the wrapped OPERATOR_REGISTRY entry; fresh DatasetStore per factor; evaluated each factor via ExpressionEvaluator on build_output_template()",
+      "result": "logged datasets matched the static audit exactly for all five ops; zero discrepancies. FirmAge (require_compustat_row=False) logged monthlyCRSP only, confirming m_aCompustat is conditional on the param."
+    }
+  },
+  "kernels": [
+    {
+      "op_name": "_op_announcement_return_signal",
+      "lines": "972-979 (delegates to p1_kern_trend_announce.announcement_return_panel 542-609; _load_links 478-519; _load_rdq_map 522-539; load_daily_ff p1_daily_kernels 287-296; iter_buckets 37-67)",
+      "footprint": [],
+      "direct_files": [
+        {
+          "path": "Data/daily_buckets",
+          "columns": [
+            "permno",
+            "time_d",
+            "ret"
+          ]
+        },
+        {
+          "path": "Open_Source_Asset_Pricing/Signals/pyData/Intermediate/dailyFF.parquet",
+          "columns": [
+            "time_d",
+            "mktrf",
+            "smb",
+            "hml",
+            "rf"
+          ]
+        },
+        {
+          "path": "Open_Source_Asset_Pricing/Signals/pyData/Intermediate/CCMLinkingTable.parquet",
+          "columns": [
+            "gvkey",
+            "permno",
+            "timeLinkStart_d",
+            "timeLinkEnd_d"
+          ]
+        },
+        {
+          "path": "Open_Source_Asset_Pricing/Signals/pyData/Intermediate/m_QCompustat.parquet",
+          "columns": [
+            "gvkey",
+            "rdq"
+          ]
+        }
+      ],
+      "notes": "No store reads: the kernel module reads everything directly (pq.read_table/pd.read_parquet). load_daily_ff always reads all 5 dailyFF columns even though only mktrf and rf are consumed here. The engine op only wraps the long result via _to_wide_panel (template attributes only). m_QCompustat and CCMLinkingTable direct reads hit the same physical files as the store datasets of those names."
+    },
+    {
+      "op_name": "_op_betafp_signal",
+      "lines": "982-989 (delegates to p1_kern_betafp_tail.betafp_panel 300-352; iter_buckets; load_daily_ff)",
+      "footprint": [],
+      "direct_files": [
+        {
+          "path": "Data/daily_buckets",
+          "columns": [
+            "permno",
+            "time_d",
+            "ret"
+          ]
+        },
+        {
+          "path": "Open_Source_Asset_Pricing/Signals/pyData/Intermediate/dailyFF.parquet",
+          "columns": [
+            "time_d",
+            "mktrf",
+            "smb",
+            "hml",
+            "rf"
+          ]
+        }
+      ],
+      "notes": "No store reads. Only mktrf is consumed from dailyFF (LogMkt = log1p(mktrf)) but load_daily_ff reads all 5 columns unconditionally. Output wrapped by _to_wide_panel (template only)."
+    },
+    {
+      "op_name": "_op_betatailrisk_signal",
+      "lines": "992-1000 (delegates to p1_kern_betafp_tail.betatailrisk_panel 585-626; build_tailrisk_series 446-526; iter_buckets)",
+      "footprint": [],
+      "direct_files": [
+        {
+          "path": "Data/daily_buckets",
+          "columns": [
+            "permno",
+            "time_d",
+            "ret"
+          ]
+        },
+        {
+          "path": "Open_Source_Asset_Pricing/Signals/pyData/Intermediate/monthlyCRSP.parquet",
+          "columns": [
+            "permno",
+            "time_avail_m",
+            "ret",
+            "shrcd"
+          ]
+        },
+        {
+          "path": "Data/tailrisk_series.parquet",
+          "columns": [
+            "time_avail_m",
+            "tailex"
+          ]
+        }
+      ],
+      "notes": "No store reads. PART 1 streams Data/daily_buckets THREE times (counts, heap selection, tail mean) unless Data/tailrisk_series.parquet exists, in which case it is read instead (pd.read_parquet) and the buckets are NOT touched. The tailrisk cache file is also WRITTEN on a cache miss \u2014 for invalidation it is a derived artifact of the daily buckets, not an independent source; fingerprint the buckets and treat the cache as derived. PART 2 reads monthlyCRSP DIRECTLY (pd.read_parquet with an explicit 4-column list), same physical file as the store's monthlyCRSP.parquet."
+    },
+    {
+      "op_name": "_op_cash_rdq_signal",
+      "lines": "1192-1232",
+      "footprint": [
+        {
+          "dataset": "m_QCompustat.parquet",
+          "columns": [
+            "gvkey",
+            "rdq",
+            "cheq",
+            "atq"
+          ],
+          "via": "store.load_raw (1206) -> .loc[:, ['gvkey','rdq','cheq','atq']]"
+        },
+        {
+          "dataset": "SignalMasterTable.parquet",
+          "columns": [
+            "permno",
+            "gvkey",
+            "time_avail_m"
+          ],
+          "via": "store.load_raw (1221) -> .loc[:, ['permno','gvkey','time_avail_m']].dropna(subset=['gvkey'])"
+        }
+      ],
+      "direct_files": [],
+      "notes": "Both column lists are static .loc literals. time_avail_m on the quarterly leg is DERIVED from rdq (datetime64[M] cast at 1209), not read from the file \u2014 do not prune rdq. Inner merge on ['gvkey','time_avail_m']; output pivoted by _to_wide_panel. SHIM-CONFIRMED (factor Cash): logged exactly {m_QCompustat.parquet, SignalMasterTable.parquet}."
+    },
+    {
+      "op_name": "_op_compustat_rows_only",
+      "lines": "1327-1330 (helper _compustat_rows_mask 1308-1324)",
+      "footprint": [
+        {
+          "dataset": "m_aCompustat.parquet",
+          "columns": [
+            "permno",
+            "time_avail_m"
+          ],
+          "via": "helper _compustat_rows_mask: store.load_raw (1317) -> .loc[:, ['permno','time_avail_m']].dropna(subset=['permno']) -> presence pivot"
+        }
+      ],
+      "direct_files": [],
+      "notes": "x is a tree arg. Mask cached in store._derived_cache['m_aCompustat_rows_mask'] \u2014 first caller loads; footprint attributed regardless."
+    },
+    {
+      "op_name": "_op_compustat_span_fill",
+      "lines": "1333-1340 (helper _compustat_rows_mask 1308-1324)",
+      "footprint": [
+        {
+          "dataset": "m_aCompustat.parquet",
+          "columns": [
+            "permno",
+            "time_avail_m"
+          ],
+          "via": "helper _compustat_rows_mask (span derived from the rows mask by cummax in both directions, 1339)"
+        }
+      ],
+      "direct_files": [],
+      "notes": "Identical dataset footprint to compustat_rows_only; the span is pure mask arithmetic."
+    },
+    {
+      "op_name": "_op_coskew_signal",
+      "lines": "1003-1012 (delegates to p1_kern_coskew.coskewness_panel 203-274 for variant='monthly' and coskew_acx_panel 277-356 for variant='daily')",
+      "footprint": [],
+      "direct_files": [
+        {
+          "path": "Open_Source_Asset_Pricing/Signals/pyData/Intermediate/monthlyCRSP.parquet",
+          "columns": [
+            "permno",
+            "time_avail_m",
+            "ret"
+          ]
+        },
+        {
+          "path": "Open_Source_Asset_Pricing/Signals/pyData/Intermediate/monthlyFF.parquet",
+          "columns": [
+            "time_avail_m",
+            "mktrf",
+            "rf"
+          ]
+        },
+        {
+          "path": "Data/daily_buckets",
+          "columns": [
+            "permno",
+            "time_d",
+            "ret"
+          ]
+        },
+        {
+          "path": "Open_Source_Asset_Pricing/Signals/pyData/Intermediate/dailyFF.parquet",
+          "columns": [
+            "time_d",
+            "mktrf",
+            "smb",
+            "hml",
+            "rf"
+          ]
+        }
+      ],
+      "notes": "PARAM-DEPENDENT (variant): 'monthly' (Coskewness) reads ONLY monthlyCRSP + monthlyFF via direct pq.read_table with explicit column lists; 'daily' (CoskewACX) reads ONLY Data/daily_buckets + dailyFF via iter_buckets/load_daily_ff. Both variants are used in P1_FACTOR_SPECS (Coskewness, CoskewACX), so this entry is the union; a variant-aware fingerprint may split it. No store reads \u2014 the direct monthlyCRSP/monthlyFF reads hit the same physical files as the store datasets."
+    },
+    {
+      "op_name": "_op_crsp_only",
+      "lines": "1280-1284 (helper _crsp_rows_mask 1264-1277)",
+      "footprint": [
+        {
+          "dataset": "monthlyCRSP.parquet",
+          "columns": [
+            "permno",
+            "time_avail_m"
+          ],
+          "via": "helper _crsp_rows_mask: store.load_raw (1270) -> .loc[:, ['permno','time_avail_m']] -> presence pivot"
+        }
+      ],
+      "direct_files": [],
+      "notes": "Row-presence mask only \u2014 no shrcd/exchcd filter (unlike the SMT universe masks). Cached in _derived_cache['crsp_rows_mask']."
+    },
+    {
+      "op_name": "_op_daily_monthly_stat",
+      "lines": "1158-1189 (delegates to p1_daily_kernels.monthly_stat_panel 238-279; _daily_derive_recipe 855-889)",
+      "footprint": [],
+      "direct_files": [
+        {
+          "path": "Data/daily_buckets",
+          "columns": [
+            "permno",
+            "time_d",
+            "ret",
+            "vol",
+            "prc",
+            "cfacpr",
+            "shrout"
+          ]
+        }
+      ],
+      "notes": "PARAM-DEPENDENT (derive): monthly_stat_panel reads bucket columns ['ret'] when value_expr is None (derive=None) but ALL FIVE value columns ['ret','vol','prc','cfacpr','shrout'] whenever a derive recipe is passed (p1_daily_kernels.py line 261), regardless of which columns the recipe touches. P1_FACTOR_SPECS uses: RealizedVol (stat=std, derive=None), MaxRet (stat=max, derive=None), ReturnSkew (stat=skew, derive=None), Illiquidity (stat=mean, derive='amihud' -> full column set). Listed columns are the UNION; the 'column' parameter default 'ret' is never overridden in specs. No store reads."
+    },
+    {
+      "op_name": "_op_earnings_increase_streak",
+      "lines": "2138-2185",
+      "footprint": [
+        {
+          "dataset": "SignalMasterTable.parquet",
+          "columns": [
+            "permno",
+            "gvkey",
+            "time_avail_m"
+          ],
+          "via": "store.load_raw (2148) -> .loc[:, ['permno','gvkey','time_avail_m']].dropna(subset=['gvkey'])"
+        },
+        {
+          "dataset": "m_QCompustat.parquet",
+          "columns": [
+            "gvkey",
+            "time_avail_m",
+            "ibq"
+          ],
+          "via": "store.load_raw (2152) -> .loc[:, ['gvkey','time_avail_m','ibq']]"
+        }
+      ],
+      "direct_files": [],
+      "notes": "The incoming ibq tree arg is vestigial (dependency tracking only, per the docstring) \u2014 the op re-loads ibq from the raw merged panel itself. Inner merge on ['gvkey','time_avail_m'], dedup keep='first' on (time_avail_m, permno), set_index+unstack (not pivot_table)."
+    },
+    {
+      "op_name": "_op_ff3_idio_stat",
+      "lines": "1140-1155 (delegates to p1_daily_kernels.ff3_idio_panels 366-392; load_daily_ff 287-296)",
+      "footprint": [],
+      "direct_files": [
+        {
+          "path": "Data/daily_buckets",
+          "columns": [
+            "permno",
+            "time_d",
+            "ret"
+          ]
+        },
+        {
+          "path": "Open_Source_Asset_Pricing/Signals/pyData/Intermediate/dailyFF.parquet",
+          "columns": [
+            "time_d",
+            "mktrf",
+            "smb",
+            "hml",
+            "rf"
+          ]
+        }
+      ],
+      "notes": "stat param ('std' -> IdioVol3F, 'skew' -> ReturnSkew3F) only selects the output column of one shared regression pass cached in store._derived_cache['ff3_idio_long'] \u2014 footprint identical for both. No store reads."
+    },
+    {
+      "op_name": "_op_firm_age",
+      "lines": "1736-1753 (helpers _universe_masks 846-852 -> build_universe_masks 4095-4122; _compustat_rows_mask 1308-1324)",
+      "footprint": [
+        {
+          "dataset": "monthlyCRSP.parquet",
+          "columns": [
+            "permno",
+            "time_avail_m",
+            "shrcd",
+            "exchcd"
+          ],
+          "via": "helper build_universe_masks: store.load_raw (4109) -> .loc[:, 4 cols] -> shrcd/exchcd filter -> presence pivot"
+        },
+        {
+          "dataset": "m_aCompustat.parquet",
+          "columns": [
+            "permno",
+            "time_avail_m"
+          ],
+          "via": "helper _compustat_rows_mask \u2014 ONLY when require_compustat_row=True"
+        }
+      ],
+      "direct_files": [],
+      "notes": "PARAM-DEPENDENT (require_compustat_row): specs use BOTH False (FirmAge, line 918 of p1_factor_specs.py) and True (grcapx_age, line 579, feeding the grcapx family) \u2014 footprint is the union; m_aCompustat is touched only on the True path. The x arg is vestigial. SHIM-CONFIRMED (factor FirmAge, require_compustat_row=False): logged monthlyCRSP only, consistent with the conditional."
+    },
+    {
+      "op_name": "_op_firm_age_momentum",
+      "lines": "1871-1888 (helper _universe_masks)",
+      "footprint": [
+        {
+          "dataset": "monthlyCRSP.parquet",
+          "columns": [
+            "permno",
+            "time_avail_m",
+            "shrcd",
+            "exchcd"
+          ],
+          "via": "helper build_universe_masks (cached _derived_cache['universe_masks'])"
+        }
+      ],
+      "direct_files": [],
+      "notes": "ret and prc are tree args; the only store read is the SMT universe mask."
+    },
+    {
+      "op_name": "_op_high52_signal",
+      "lines": "892-908 (delegates to p1_daily_kernels.monthly_stat_panel with value_expr=_daily_derive_recipe('absprc'), twice)",
+      "footprint": [],
+      "direct_files": [
+        {
+          "path": "Data/daily_buckets",
+          "columns": [
+            "permno",
+            "time_d",
+            "ret",
+            "vol",
+            "prc",
+            "cfacpr",
+            "shrout"
+          ]
+        }
+      ],
+      "notes": "The absprc recipe consumes only prc, but monthly_stat_panel reads ALL FIVE value columns whenever value_expr is non-None (p1_daily_kernels.py line 261) \u2014 the full column set is what is physically read. Two full bucket streams (max and last of |prc|). No store reads."
+    },
+    {
+      "op_name": "_op_hire_growth",
+      "lines": "1580-1585 (helper _compustat_rows_mask 1308-1324)",
+      "footprint": [
+        {
+          "dataset": "m_aCompustat.parquet",
+          "columns": [
+            "permno",
+            "time_avail_m"
+          ],
+          "via": "helper _compustat_rows_mask (row-support mask for the zero-fill confinement)"
+        }
+      ],
+      "direct_files": [],
+      "notes": "emp is a tree arg. SHIM-CONFIRMED (factor hire): logged exactly {m_aCompustat.parquet}."
+    },
+    {
+      "op_name": "_op_industry_big_return",
+      "lines": "3776-3804 (helpers _universe_masks; _get_ff48_func 196-208)",
+      "footprint": [
+        {
+          "dataset": "monthlyCRSP.parquet",
+          "columns": [
+            "permno",
+            "time_avail_m",
+            "shrcd",
+            "exchcd"
+          ],
+          "via": "helper build_universe_masks"
+        }
+      ],
+      "direct_files": [],
+      "notes": "ret/mve_c/sic are tree args. NON-DATASET FILE DEPENDENCY: _get_ff48_func lazily imports Open_Source_Asset_Pricing/Signals/pyCode/utils/sicff.py (module-global _FF48_FUNC) \u2014 a code file, not a parquet; include it in any packaging/fingerprint of this op's environment but it is not a data read."
+    },
+    {
+      "op_name": "_op_intangible_residual",
+      "lines": "2646-2674 (helpers _universe_masks; _compustat_rows_mask)",
+      "footprint": [
+        {
+          "dataset": "monthlyCRSP.parquet",
+          "columns": [
+            "permno",
+            "time_avail_m",
+            "shrcd",
+            "exchcd"
+          ],
+          "via": "helper build_universe_masks"
+        },
+        {
+          "dataset": "m_aCompustat.parquet",
+          "columns": [
+            "permno",
+            "time_avail_m"
+          ],
+          "via": "helper _compustat_rows_mask"
+        }
+      ],
+      "direct_files": [],
+      "notes": "account_measure and ret are tree args; universe U = SMT strict mask AND m_aCompustat row presence. Behavior (not footprint) additionally forks on the module-global REFERENCE_MODE flag (line 126): full-sample vs per-month trim."
+    },
+    {
+      "op_name": "_op_momentum_reversal_signal",
+      "lines": "1926-1942 (helper _universe_masks)",
+      "footprint": [
+        {
+          "dataset": "monthlyCRSP.parquet",
+          "columns": [
+            "permno",
+            "time_avail_m",
+            "shrcd",
+            "exchcd"
+          ],
+          "via": "helper build_universe_masks"
+        }
+      ],
+      "direct_files": [],
+      "notes": "ret is a tree arg; span mask derived from strict by cummax arithmetic (no extra read)."
+    },
+    {
+      "op_name": "_op_momentum_volume_signal",
+      "lines": "1945-1969 (helper _universe_masks)",
+      "footprint": [
+        {
+          "dataset": "monthlyCRSP.parquet",
+          "columns": [
+            "permno",
+            "time_avail_m",
+            "shrcd",
+            "exchcd"
+          ],
+          "via": "helper build_universe_masks"
+        }
+      ],
+      "direct_files": [],
+      "notes": "ret and vol are tree args."
+    },
+    {
+      "op_name": "_op_monthly_rolling_beta",
+      "lines": "1096-1137 (helpers _get_derived_cache; _op_crsp_only -> _crsp_rows_mask 1264-1277; kernel rolling_beta_panel_kernel is pure)",
+      "footprint": [
+        {
+          "dataset": "monthlyCRSP.parquet",
+          "columns": [
+            "ret"
+          ],
+          "via": "store.get (1120)"
+        },
+        {
+          "dataset": "monthlyMarket.parquet",
+          "columns": [
+            "ewretd"
+          ],
+          "via": "store.get (1121) \u2014 from the x_dataset/x_column params"
+        },
+        {
+          "dataset": "monthlyFF.parquet",
+          "columns": [
+            "rf"
+          ],
+          "via": "store.get (1123) \u2014 only when y_excess or x_excess"
+        },
+        {
+          "dataset": "monthlyCRSP.parquet",
+          "columns": [
+            "permno",
+            "time_avail_m"
+          ],
+          "via": "helper _crsp_rows_mask (populated via _op_crsp_only at 1131 if absent; also used for the final crsp_only mask at 1137)"
+        }
+      ],
+      "direct_files": [],
+      "notes": "PARAM-DEPENDENT (x_dataset, x_column, y_excess, x_excess): the ONLY spec use is Beta (p1_factor_specs.py line 1019) with x_dataset='monthlyMarket.parquet', x_column='ewretd', y_excess=True, x_excess=True \u2014 so monthlyFF rf IS read and the union equals the listed entries. Any new spec use with a different x_dataset extends this footprint."
+    },
+    {
+      "op_name": "_op_monthly_rolling_multibeta",
+      "lines": "1058-1093 (helper _op_crsp_only -> _crsp_rows_mask; kernel rolling_multibeta_panel_kernel is pure)",
+      "footprint": [
+        {
+          "dataset": "monthlyCRSP.parquet",
+          "columns": [
+            "ret"
+          ],
+          "via": "store.get (1089)"
+        },
+        {
+          "dataset": "monthlyFF.parquet",
+          "columns": [
+            "rf",
+            "mktrf",
+            "hml",
+            "smb"
+          ],
+          "via": "store.get \u2014 rf at 1089; mktrf/hml/smb via the regressors param through _series (1087)"
+        },
+        {
+          "dataset": "monthlyCRSP.parquet",
+          "columns": [
+            "permno",
+            "time_avail_m"
+          ],
+          "via": "helper _crsp_rows_mask (final _op_crsp_only mask at 1093)"
+        }
+      ],
+      "direct_files": [
+        {
+          "path": "Data/ps_innov_pit.parquet",
+          "columns": [
+            "time_avail_m",
+            "ps_innov_pit"
+          ],
+          "via": "pd.read_parquet at 1083 for the '@pit_liquidity' special regressor token"
+        }
+      ],
+      "notes": "PARAM-DEPENDENT (regressors): the ONLY spec use is BetaLiquidityPS (p1_factor_specs.py line 1027) with regressors [['@pit_liquidity','ps_innov_pit'], ['monthlyFF.parquet','mktrf'], ['monthlyFF.parquet','hml'], ['monthlyFF.parquet','smb']] \u2014 union listed. '@pit_liquidity' bypasses the store entirely (user-mandated point-in-time series); any other '@' token raises KeyError."
+    },
+    {
+      "op_name": "_op_netpayout_yield_signal",
+      "lines": "1588-1607 (helpers _universe_masks; _compustat_rows_mask)",
+      "footprint": [
+        {
+          "dataset": "monthlyCRSP.parquet",
+          "columns": [
+            "permno",
+            "time_avail_m",
+            "shrcd",
+            "exchcd"
+          ],
+          "via": "helper build_universe_masks"
+        },
+        {
+          "dataset": "m_aCompustat.parquet",
+          "columns": [
+            "permno",
+            "time_avail_m"
+          ],
+          "via": "helper _compustat_rows_mask"
+        }
+      ],
+      "direct_files": [],
+      "notes": "dvc/prstkc/sstk/mve/sic/ceq are tree args; the op reads only the two row-support masks (universe = SMT strict AND m_aCompustat rows)."
+    },
+    {
+      "op_name": "_op_payout_yield_signal",
+      "lines": "1610-1627 (helpers _universe_masks; _compustat_rows_mask)",
+      "footprint": [
+        {
+          "dataset": "monthlyCRSP.parquet",
+          "columns": [
+            "permno",
+            "time_avail_m",
+            "shrcd",
+            "exchcd"
+          ],
+          "via": "helper build_universe_masks"
+        },
+        {
+          "dataset": "m_aCompustat.parquet",
+          "columns": [
+            "permno",
+            "time_avail_m"
+          ],
+          "via": "helper _compustat_rows_mask"
+        }
+      ],
+      "direct_files": [],
+      "notes": "Same mask-only footprint as netpayout_yield_signal; dvc/prstkc/pstkrv/mve/sic/ceq are tree args."
+    },
+    {
+      "op_name": "_op_piotroski_score",
+      "lines": "3812-3879 (helpers _universe_masks; _compustat_rows_mask; _crsp_rows_mask)",
+      "footprint": [
+        {
+          "dataset": "monthlyCRSP.parquet",
+          "columns": [
+            "permno",
+            "time_avail_m",
+            "shrcd",
+            "exchcd"
+          ],
+          "via": "helpers build_universe_masks (4 cols) and _crsp_rows_mask (permno/time_avail_m \u2014 subsumed)"
+        },
+        {
+          "dataset": "m_aCompustat.parquet",
+          "columns": [
+            "permno",
+            "time_avail_m"
+          ],
+          "via": "helper _compustat_rows_mask"
+        }
+      ],
+      "direct_files": [],
+      "notes": "All 13 accounting/market inputs are tree args; the op itself reads only the three row-support masks (U = m_aCompustat rows AND SMT strict AND monthlyCRSP rows). NOTE: the old audit recorded _op_piotroski_score as store-free \u2014 the function has since been rewritten to take store and mask on U. SHIM-CONFIRMED (factor PS): logged exactly {m_aCompustat.parquet, monthlyCRSP.parquet}."
+    },
+    {
+      "op_name": "_op_price_delay",
+      "lines": "1015-1028 (delegates to p1_kern_pricedelay.price_delay_panels 357-434; iter_buckets; load_daily_ff)",
+      "footprint": [],
+      "direct_files": [
+        {
+          "path": "Data/daily_buckets",
+          "columns": [
+            "permno",
+            "time_d",
+            "ret"
+          ]
+        },
+        {
+          "path": "Open_Source_Asset_Pricing/Signals/pyData/Intermediate/dailyFF.parquet",
+          "columns": [
+            "time_d",
+            "mktrf",
+            "smb",
+            "hml",
+            "rf"
+          ]
+        }
+      ],
+      "notes": "stat param ('slope'/'rsq'/'tstat') only selects the output column of one shared regression pass cached in store._derived_cache['price_delay_long'] \u2014 footprint identical for all three. Only mktrf/rf are consumed from dailyFF but load_daily_ff reads all 5. Oracle files under Data/golden/oracle are read ONLY by the module's self_test, never by the production path. No store reads."
+    },
+    {
+      "op_name": "_op_require_any_lag",
+      "lines": "1363-1376 (helper _universe_masks)",
+      "footprint": [
+        {
+          "dataset": "monthlyCRSP.parquet",
+          "columns": [
+            "permno",
+            "time_avail_m",
+            "shrcd",
+            "exchcd"
+          ],
+          "via": "helper build_universe_masks"
+        }
+      ],
+      "direct_files": [],
+      "notes": "x, source, and lags are tree args/params; only the SMT strict mask is read."
+    },
+    {
+      "op_name": "_op_residual_momentum",
+      "lines": "1031-1055 (helper _op_crsp_only -> _crsp_rows_mask; kernel rolling_ff3_residual_kernel is pure)",
+      "footprint": [
+        {
+          "dataset": "monthlyCRSP.parquet",
+          "columns": [
+            "ret"
+          ],
+          "via": "store.get (1045)"
+        },
+        {
+          "dataset": "monthlyFF.parquet",
+          "columns": [
+            "rf",
+            "mktrf",
+            "hml",
+            "smb"
+          ],
+          "via": "store.get (1045-1046)"
+        },
+        {
+          "dataset": "monthlyCRSP.parquet",
+          "columns": [
+            "permno",
+            "time_avail_m"
+          ],
+          "via": "helper _crsp_rows_mask (final _op_crsp_only mask at 1055)"
+        }
+      ],
+      "direct_files": [],
+      "notes": "reg_window/mom_window params do not change the dataset footprint. Entirely monthly \u2014 no daily bucket access despite living in the daily-kernel family."
+    },
+    {
+      "op_name": "_op_rolling_industry_herfindahl",
+      "lines": "2006-2076 (helpers _universe_masks; _compustat_rows_mask)",
+      "footprint": [
+        {
+          "dataset": "monthlyCRSP.parquet",
+          "columns": [
+            "permno",
+            "time_avail_m",
+            "shrcd",
+            "exchcd"
+          ],
+          "via": "helper build_universe_masks"
+        },
+        {
+          "dataset": "m_aCompustat.parquet",
+          "columns": [
+            "permno",
+            "time_avail_m"
+          ],
+          "via": "helper _compustat_rows_mask \u2014 ONLY when require_compustat_row=True"
+        }
+      ],
+      "direct_files": [],
+      "notes": "PARAM-DEPENDENT (require_compustat_row): specs use False (Herf, line 1111) and True (HerfAsset line 1114, HerfBE line 1115) \u2014 footprint is the union; m_aCompustat only on the True path. metric/sic/shrcd are tree args."
+    },
+    {
+      "op_name": "_op_rolling_market_rmse",
+      "lines": "948-958 (delegates to p1_daily_kernels.rolling_market_rmse_panel 458-488; load_daily_ff)",
+      "footprint": [],
+      "direct_files": [
+        {
+          "path": "Data/daily_buckets",
+          "columns": [
+            "permno",
+            "time_d",
+            "ret"
+          ]
+        },
+        {
+          "path": "Open_Source_Asset_Pricing/Signals/pyData/Intermediate/dailyFF.parquet",
+          "columns": [
+            "time_d",
+            "mktrf",
+            "smb",
+            "hml",
+            "rf"
+          ]
+        }
+      ],
+      "notes": "window/min_obs params do not change the footprint. Only mktrf/rf consumed from dailyFF; all 5 columns physically read. No store reads."
+    },
+    {
+      "op_name": "_op_share_volume_signal",
+      "lines": "1972-1992 (helper _universe_masks)",
+      "footprint": [
+        {
+          "dataset": "monthlyCRSP.parquet",
+          "columns": [
+            "permno",
+            "time_avail_m",
+            "shrcd",
+            "exchcd"
+          ],
+          "via": "helper build_universe_masks"
+        }
+      ],
+      "direct_files": [],
+      "notes": "vol and shrout are tree args."
+    },
+    {
+      "op_name": "_op_size_decile_filtered",
+      "lines": "1672-1678 (helper _compustat_rows_mask)",
+      "footprint": [
+        {
+          "dataset": "m_aCompustat.parquet",
+          "columns": [
+            "permno",
+            "time_avail_m"
+          ],
+          "via": "helper _compustat_rows_mask (decile pool restriction)"
+        }
+      ],
+      "direct_files": [],
+      "notes": "x and size are tree args; only the Compustat row-support mask is read."
+    },
+    {
+      "op_name": "_op_smt_fill",
+      "lines": "1250-1254 (helper _universe_masks 846-852 -> build_universe_masks 4095-4122)",
+      "footprint": [
+        {
+          "dataset": "monthlyCRSP.parquet",
+          "columns": [
+            "permno",
+            "time_avail_m",
+            "shrcd",
+            "exchcd"
+          ],
+          "via": "helper build_universe_masks: store.load_raw (4109) -> shrcd in {10,11,12} & exchcd in {1,2,3} filter -> presence pivot; cached _derived_cache['universe_masks']"
+        }
+      ],
+      "direct_files": [],
+      "notes": "x is a tree arg. SHIM-CONFIRMED (factor STreversal): logged exactly {monthlyCRSP.parquet}."
+    },
+    {
+      "op_name": "_op_smt_gvkey_only",
+      "lines": "1287-1305",
+      "footprint": [
+        {
+          "dataset": "SignalMasterTable.parquet",
+          "columns": [
+            "permno",
+            "gvkey",
+            "time_avail_m"
+          ],
+          "via": "store.load_raw (1295) -> .loc[:, ['permno','gvkey','time_avail_m']].dropna(subset=['gvkey']) -> presence pivot; cached _derived_cache['smt_gvkey_rows_mask']"
+        }
+      ],
+      "direct_files": [],
+      "notes": "The ONLY op in this batch whose universe comes from SignalMasterTable row presence with non-null gvkey rather than from monthlyCRSP-derived masks \u2014 do not conflate with smt_only."
+    },
+    {
+      "op_name": "_op_smt_only",
+      "lines": "1257-1261 (helper _universe_masks)",
+      "footprint": [
+        {
+          "dataset": "monthlyCRSP.parquet",
+          "columns": [
+            "permno",
+            "time_avail_m",
+            "shrcd",
+            "exchcd"
+          ],
+          "via": "helper build_universe_masks"
+        }
+      ],
+      "direct_files": [],
+      "notes": "Despite the name, the mask is built from monthlyCRSP (shrcd/exchcd replicate the SignalMasterTable membership filter) \u2014 SignalMasterTable.parquet itself is NOT read."
+    },
+    {
+      "op_name": "_op_span_fill",
+      "lines": "1235-1247 (helper _universe_masks)",
+      "footprint": [
+        {
+          "dataset": "monthlyCRSP.parquet",
+          "columns": [
+            "permno",
+            "time_avail_m",
+            "shrcd",
+            "exchcd"
+          ],
+          "via": "helper build_universe_masks (strict + span masks)"
+        }
+      ],
+      "direct_files": [],
+      "notes": "x is a tree arg; span mask is cummax arithmetic on strict \u2014 same single dataset read."
+    },
+    {
+      "op_name": "_op_span_only",
+      "lines": "1350-1360 (helper _universe_masks)",
+      "footprint": [
+        {
+          "dataset": "monthlyCRSP.parquet",
+          "columns": [
+            "permno",
+            "time_avail_m",
+            "shrcd",
+            "exchcd"
+          ],
+          "via": "helper build_universe_masks"
+        }
+      ],
+      "direct_files": [],
+      "notes": "Output-domain twin of span_fill; identical footprint."
+    },
+    {
+      "op_name": "_op_trendfactor_signal",
+      "lines": "961-969 (delegates to p1_kern_trend_announce.trendfactor_panel 292-375; _load_smt_filtered 237-289; iter_buckets)",
+      "footprint": [],
+      "direct_files": [
+        {
+          "path": "Data/daily_buckets",
+          "columns": [
+            "permno",
+            "time_d",
+            "prc",
+            "cfacpr"
+          ]
+        },
+        {
+          "path": "Open_Source_Asset_Pricing/Signals/pyData/Intermediate/SignalMasterTable.parquet",
+          "columns": [
+            "permno",
+            "time_avail_m",
+            "ret",
+            "prc",
+            "exchcd",
+            "shrcd",
+            "mve_c"
+          ]
+        }
+      ],
+      "notes": "No store reads. The ONLY daily-family op that reads bucket columns prc/cfacpr instead of ret, and the only one reading SignalMasterTable directly (pq.read_table with an explicit 7-column list). Does NOT read dailyFF (load_daily_ff is imported by the module but not called on the trendfactor path)."
+    },
+    {
+      "op_name": "_op_zerotrade_signal",
+      "lines": "911-945 (delegates to p1_daily_kernels.monthly_stat_panel with value_expr recipes 'zerovol'/'turnover'/'one', three streams)",
+      "footprint": [],
+      "direct_files": [
+        {
+          "path": "Data/daily_buckets",
+          "columns": [
+            "permno",
+            "time_d",
+            "ret",
+            "vol",
+            "prc",
+            "cfacpr",
+            "shrout"
+          ]
+        }
+      ],
+      "notes": "The three recipes consume only vol and shrout, but monthly_stat_panel reads ALL FIVE value columns whenever value_expr is non-None (p1_daily_kernels.py line 261). window/deflator params do not change the footprint. Three full bucket streams. No store reads."
+    }
+  ]
+}

@@ -1,0 +1,609 @@
+{
+ "AM": [
+  "m_aCompustat.parquet",
+  "monthlyCRSP.parquet"
+ ],
+ "AOP": [
+  "IBES_EPS_Unadj.parquet",
+  "SignalMasterTable.parquet",
+  "m_aCompustat.parquet",
+  "monthlyCRSP.parquet"
+ ],
+ "AbnormalAccruals": [
+  "SignalMasterTable.parquet",
+  "a_aCompustat.parquet",
+  "monthlyCRSP.parquet"
+ ],
+ "Accruals": [
+  "m_aCompustat.parquet"
+ ],
+ "AccrualsBM": [
+  "m_aCompustat.parquet",
+  "monthlyCRSP.parquet"
+ ],
+ "AdExp": [
+  "m_aCompustat.parquet",
+  "monthlyCRSP.parquet"
+ ],
+ "AnalystRevision": [
+  "IBES_EPS_Unadj.parquet",
+  "monthlyCRSP.parquet"
+ ],
+ "AnalystValue": [
+  "IBES_EPS_Unadj.parquet",
+  "SignalMasterTable.parquet",
+  "m_aCompustat.parquet",
+  "monthlyCRSP.parquet"
+ ],
+ "AnnouncementReturn": [
+  "dailyCRSP.parquet"
+ ],
+ "AssetGrowth": [
+  "m_aCompustat.parquet"
+ ],
+ "BM": [
+  "m_aCompustat.parquet",
+  "monthlyCRSP.parquet"
+ ],
+ "BMdec": [
+  "m_aCompustat.parquet",
+  "monthlyCRSP.parquet"
+ ],
+ "BPEBM": [
+  "m_aCompustat.parquet",
+  "monthlyCRSP.parquet"
+ ],
+ "Beta": [
+  "dailyCRSP.parquet",
+  "monthlyCRSP.parquet",
+  "monthlyFF.parquet",
+  "monthlyMarket.parquet"
+ ],
+ "BetaFP": [
+  "dailyCRSP.parquet"
+ ],
+ "BetaLiquidityPS": [
+  "dailyCRSP.parquet",
+  "monthlyCRSP.parquet",
+  "monthlyFF.parquet"
+ ],
+ "BetaTailRisk": [
+  "dailyCRSP.parquet"
+ ],
+ "BookLeverage": [
+  "m_aCompustat.parquet"
+ ],
+ "BrandInvest": [
+  "a_aCompustat.parquet"
+ ],
+ "CBOperProf": [
+  "m_aCompustat.parquet",
+  "monthlyCRSP.parquet"
+ ],
+ "CF": [
+  "m_aCompustat.parquet",
+  "monthlyCRSP.parquet"
+ ],
+ "Cash": [
+  "SignalMasterTable.parquet",
+  "m_QCompustat.parquet"
+ ],
+ "CashProd": [
+  "m_aCompustat.parquet",
+  "monthlyCRSP.parquet"
+ ],
+ "ChAssetTurnover": [
+  "m_aCompustat.parquet"
+ ],
+ "ChEQ": [
+  "m_aCompustat.parquet"
+ ],
+ "ChForecastAccrual": [
+  "IBES_EPS_Unadj.parquet",
+  "SignalMasterTable.parquet",
+  "m_aCompustat.parquet"
+ ],
+ "ChInv": [
+  "m_aCompustat.parquet"
+ ],
+ "ChInvIA": [
+  "m_aCompustat.parquet",
+  "monthlyCRSP.parquet"
+ ],
+ "ChNNCOA": [
+  "m_aCompustat.parquet"
+ ],
+ "ChNWC": [
+  "m_aCompustat.parquet"
+ ],
+ "ChTax": [
+  "m_QCompustat.parquet",
+  "m_aCompustat.parquet"
+ ],
+ "ChangeInRecommendation": [
+  "IBES_Recommendations.parquet",
+  "SignalMasterTable.parquet"
+ ],
+ "CompEquIss": [
+  "monthlyCRSP.parquet"
+ ],
+ "CompositeDebtIssuance": [
+  "m_aCompustat.parquet"
+ ],
+ "ConsRecomm": [
+  "IBES_Recommendations.parquet",
+  "SignalMasterTable.parquet"
+ ],
+ "ConvDebt": [
+  "m_aCompustat.parquet"
+ ],
+ "CoskewACX": [
+  "dailyCRSP.parquet"
+ ],
+ "Coskewness": [
+  "dailyCRSP.parquet"
+ ],
+ "DebtIssuance": [
+  "m_aCompustat.parquet",
+  "monthlyCRSP.parquet"
+ ],
+ "DelCOA": [
+  "m_aCompustat.parquet"
+ ],
+ "DelCOL": [
+  "m_aCompustat.parquet"
+ ],
+ "DelDRC": [
+  "m_aCompustat.parquet"
+ ],
+ "DelEqu": [
+  "m_aCompustat.parquet"
+ ],
+ "DelFINL": [
+  "m_aCompustat.parquet"
+ ],
+ "DelLTI": [
+  "m_aCompustat.parquet"
+ ],
+ "DelNetFin": [
+  "m_aCompustat.parquet"
+ ],
+ "DivInit": [
+  "CRSPdistributions.parquet",
+  "monthlyCRSP.parquet"
+ ],
+ "DivOmit": [
+  "CRSPdistributions.parquet",
+  "monthlyCRSP.parquet"
+ ],
+ "DivSeason": [
+  "CRSPdistributions.parquet",
+  "monthlyCRSP.parquet"
+ ],
+ "DivYieldST": [
+  "CRSPdistributions.parquet",
+  "monthlyCRSP.parquet"
+ ],
+ "DolVol": [
+  "monthlyCRSP.parquet"
+ ],
+ "DownRecomm": [
+  "IBES_Recommendations.parquet",
+  "SignalMasterTable.parquet"
+ ],
+ "EBM": [
+  "m_aCompustat.parquet",
+  "monthlyCRSP.parquet"
+ ],
+ "EP": [
+  "m_aCompustat.parquet",
+  "monthlyCRSP.parquet"
+ ],
+ "EarnSupBig": [
+  "m_QCompustat.parquet",
+  "monthlyCRSP.parquet"
+ ],
+ "EarningsConsistency": [
+  "m_aCompustat.parquet"
+ ],
+ "EarningsForecastDisparity": [
+  "IBES_EPS_Unadj.parquet",
+  "IBES_UnadjustedActuals.parquet",
+  "SignalMasterTable.parquet"
+ ],
+ "EarningsStreak": [
+  "IBES_EPS_Adj.parquet",
+  "SignalMasterTable.parquet"
+ ],
+ "EarningsSurprise": [
+  "m_QCompustat.parquet",
+  "monthlyCRSP.parquet"
+ ],
+ "EntMult": [
+  "m_aCompustat.parquet",
+  "monthlyCRSP.parquet"
+ ],
+ "EquityDuration": [
+  "a_aCompustat.parquet"
+ ],
+ "ExchSwitch": [
+  "monthlyCRSP.parquet"
+ ],
+ "ExclExp": [
+  "IBES_UnadjustedActuals.parquet",
+  "SignalMasterTable.parquet",
+  "m_QCompustat.parquet"
+ ],
+ "FEPS": [
+  "IBES_EPS_Unadj.parquet",
+  "SignalMasterTable.parquet"
+ ],
+ "FirmAge": [
+  "m_aCompustat.parquet",
+  "monthlyCRSP.parquet"
+ ],
+ "FirmAgeMom": [
+  "monthlyCRSP.parquet"
+ ],
+ "ForecastDispersion": [
+  "IBES_EPS_Unadj.parquet",
+  "monthlyCRSP.parquet"
+ ],
+ "Frontier": [
+  "SignalMasterTable.parquet",
+  "m_aCompustat.parquet",
+  "monthlyCRSP.parquet"
+ ],
+ "GP": [
+  "m_aCompustat.parquet"
+ ],
+ "GrAdExp": [
+  "m_aCompustat.parquet",
+  "monthlyCRSP.parquet"
+ ],
+ "GrLTNOA": [
+  "m_aCompustat.parquet"
+ ],
+ "GrSaleToGrInv": [
+  "m_aCompustat.parquet"
+ ],
+ "GrSaleToGrOverhead": [
+  "m_aCompustat.parquet"
+ ],
+ "Herf": [
+  "m_aCompustat.parquet",
+  "monthlyCRSP.parquet"
+ ],
+ "HerfAsset": [
+  "m_aCompustat.parquet",
+  "monthlyCRSP.parquet"
+ ],
+ "HerfBE": [
+  "m_aCompustat.parquet",
+  "monthlyCRSP.parquet"
+ ],
+ "High52": [
+  "dailyCRSP.parquet"
+ ],
+ "IdioVol3F": [
+  "dailyCRSP.parquet"
+ ],
+ "IdioVolAHT": [
+  "dailyCRSP.parquet"
+ ],
+ "Illiquidity": [
+  "dailyCRSP.parquet"
+ ],
+ "IndMom": [
+  "monthlyCRSP.parquet"
+ ],
+ "IndRetBig": [
+  "monthlyCRSP.parquet"
+ ],
+ "IntMom": [
+  "monthlyCRSP.parquet"
+ ],
+ "IntanBM": [
+  "m_aCompustat.parquet",
+  "monthlyCRSP.parquet"
+ ],
+ "IntanCFP": [
+  "m_aCompustat.parquet",
+  "monthlyCRSP.parquet"
+ ],
+ "IntanEP": [
+  "m_aCompustat.parquet",
+  "monthlyCRSP.parquet"
+ ],
+ "IntanSP": [
+  "m_aCompustat.parquet",
+  "monthlyCRSP.parquet"
+ ],
+ "InvestPPEInv": [
+  "m_aCompustat.parquet"
+ ],
+ "Investment": [
+  "m_aCompustat.parquet"
+ ],
+ "LRreversal": [
+  "monthlyCRSP.parquet"
+ ],
+ "Leverage": [
+  "m_aCompustat.parquet",
+  "monthlyCRSP.parquet"
+ ],
+ "MRreversal": [
+  "monthlyCRSP.parquet"
+ ],
+ "MS": [
+  "SignalMasterTable.parquet",
+  "m_QCompustat.parquet",
+  "m_aCompustat.parquet",
+  "monthlyCRSP.parquet"
+ ],
+ "MaxRet": [
+  "dailyCRSP.parquet"
+ ],
+ "MeanRankRevGrowth": [
+  "m_aCompustat.parquet"
+ ],
+ "Mom12m": [
+  "monthlyCRSP.parquet"
+ ],
+ "Mom12mOffSeason": [
+  "monthlyCRSP.parquet"
+ ],
+ "Mom6m": [
+  "monthlyCRSP.parquet"
+ ],
+ "MomOffSeason": [
+  "monthlyCRSP.parquet"
+ ],
+ "MomOffSeason06YrPlus": [
+  "monthlyCRSP.parquet"
+ ],
+ "MomOffSeason11YrPlus": [
+  "monthlyCRSP.parquet"
+ ],
+ "MomOffSeason16YrPlus": [
+  "monthlyCRSP.parquet"
+ ],
+ "MomRev": [
+  "monthlyCRSP.parquet"
+ ],
+ "MomSeason": [
+  "monthlyCRSP.parquet"
+ ],
+ "MomSeason06YrPlus": [
+  "monthlyCRSP.parquet"
+ ],
+ "MomSeason11YrPlus": [
+  "monthlyCRSP.parquet"
+ ],
+ "MomSeason16YrPlus": [
+  "monthlyCRSP.parquet"
+ ],
+ "MomSeasonShort": [
+  "monthlyCRSP.parquet"
+ ],
+ "MomVol": [
+  "monthlyCRSP.parquet"
+ ],
+ "NOA": [
+  "m_aCompustat.parquet"
+ ],
+ "NetDebtFinance": [
+  "m_aCompustat.parquet"
+ ],
+ "NetDebtPrice": [
+  "m_aCompustat.parquet",
+  "monthlyCRSP.parquet"
+ ],
+ "NetEquityFinance": [
+  "m_aCompustat.parquet"
+ ],
+ "NetPayoutYield": [
+  "m_aCompustat.parquet",
+  "monthlyCRSP.parquet"
+ ],
+ "NumEarnIncrease": [
+  "SignalMasterTable.parquet",
+  "m_QCompustat.parquet"
+ ],
+ "OPLeverage": [
+  "m_aCompustat.parquet"
+ ],
+ "OperProf": [
+  "m_aCompustat.parquet",
+  "monthlyCRSP.parquet"
+ ],
+ "OperProfRD": [
+  "m_aCompustat.parquet",
+  "monthlyCRSP.parquet"
+ ],
+ "OrderBacklog": [
+  "m_aCompustat.parquet"
+ ],
+ "OrderBacklogChg": [
+  "m_aCompustat.parquet"
+ ],
+ "PS": [
+  "m_aCompustat.parquet",
+  "monthlyCRSP.parquet"
+ ],
+ "PayoutYield": [
+  "m_aCompustat.parquet",
+  "monthlyCRSP.parquet"
+ ],
+ "PctAcc": [
+  "m_aCompustat.parquet"
+ ],
+ "PctTotAcc": [
+  "m_aCompustat.parquet"
+ ],
+ "PredictedFE": [
+  "IBES_EPS_Unadj.parquet",
+  "SignalMasterTable.parquet",
+  "m_aCompustat.parquet",
+  "monthlyCRSP.parquet"
+ ],
+ "Price": [
+  "monthlyCRSP.parquet"
+ ],
+ "PriceDelayRsq": [
+  "dailyCRSP.parquet"
+ ],
+ "PriceDelaySlope": [
+  "dailyCRSP.parquet"
+ ],
+ "PriceDelayTstat": [
+  "dailyCRSP.parquet"
+ ],
+ "RD": [
+  "m_aCompustat.parquet",
+  "monthlyCRSP.parquet"
+ ],
+ "RDAbility": [
+  "a_aCompustat.parquet"
+ ],
+ "RDcap": [
+  "m_aCompustat.parquet",
+  "monthlyCRSP.parquet"
+ ],
+ "REV6": [
+  "IBES_EPS_Adj.parquet",
+  "IBES_EPS_Unadj.parquet",
+  "SignalMasterTable.parquet"
+ ],
+ "RealizedVol": [
+  "dailyCRSP.parquet"
+ ],
+ "ResidualMomentum": [
+  "dailyCRSP.parquet",
+  "monthlyCRSP.parquet",
+  "monthlyFF.parquet"
+ ],
+ "ReturnSkew": [
+  "dailyCRSP.parquet"
+ ],
+ "ReturnSkew3F": [
+  "dailyCRSP.parquet"
+ ],
+ "RevenueSurprise": [
+  "SignalMasterTable.parquet",
+  "m_QCompustat.parquet"
+ ],
+ "RoE": [
+  "m_aCompustat.parquet"
+ ],
+ "SP": [
+  "m_aCompustat.parquet",
+  "monthlyCRSP.parquet"
+ ],
+ "STreversal": [
+  "monthlyCRSP.parquet"
+ ],
+ "ShareIss1Y": [
+  "monthlyCRSP.parquet"
+ ],
+ "ShareIss5Y": [
+  "monthlyCRSP.parquet"
+ ],
+ "ShareRepurchase": [
+  "m_aCompustat.parquet"
+ ],
+ "ShareVol": [
+  "monthlyCRSP.parquet"
+ ],
+ "Size": [
+  "monthlyCRSP.parquet"
+ ],
+ "SurpriseRD": [
+  "m_aCompustat.parquet"
+ ],
+ "Tax": [
+  "m_aCompustat.parquet"
+ ],
+ "TotalAccruals": [
+  "m_aCompustat.parquet"
+ ],
+ "TrendFactor": [
+  "dailyCRSP.parquet"
+ ],
+ "UpRecomm": [
+  "IBES_Recommendations.parquet",
+  "SignalMasterTable.parquet"
+ ],
+ "VarCF": [
+  "m_aCompustat.parquet",
+  "monthlyCRSP.parquet"
+ ],
+ "VolMkt": [
+  "monthlyCRSP.parquet"
+ ],
+ "VolSD": [
+  "monthlyCRSP.parquet"
+ ],
+ "VolumeTrend": [
+  "monthlyCRSP.parquet"
+ ],
+ "XFIN": [
+  "m_aCompustat.parquet"
+ ],
+ "cfp": [
+  "m_aCompustat.parquet",
+  "monthlyCRSP.parquet"
+ ],
+ "dNoa": [
+  "m_aCompustat.parquet"
+ ],
+ "fgr5yrLag": [
+  "IBES_EPS_Unadj.parquet",
+  "SignalMasterTable.parquet",
+  "m_aCompustat.parquet"
+ ],
+ "grcapx": [
+  "m_aCompustat.parquet",
+  "monthlyCRSP.parquet"
+ ],
+ "grcapx3y": [
+  "m_aCompustat.parquet",
+  "monthlyCRSP.parquet"
+ ],
+ "hire": [
+  "m_aCompustat.parquet"
+ ],
+ "realestate": [
+  "m_aCompustat.parquet",
+  "monthlyCRSP.parquet"
+ ],
+ "roaq": [
+  "m_QCompustat.parquet",
+  "monthlyCRSP.parquet"
+ ],
+ "sfe": [
+  "IBES_EPS_Unadj.parquet",
+  "SignalMasterTable.parquet",
+  "m_aCompustat.parquet",
+  "monthlyCRSP.parquet"
+ ],
+ "std_turn": [
+  "monthlyCRSP.parquet"
+ ],
+ "tang": [
+  "m_aCompustat.parquet"
+ ],
+ "zerotrade12M": [
+  "dailyCRSP.parquet"
+ ],
+ "zerotrade1M": [
+  "dailyCRSP.parquet"
+ ],
+ "zerotrade6M": [
+  "dailyCRSP.parquet"
+ ],
+ "ChNAnalyst": [
+  "IBES_EPS_Unadj.parquet",
+  "SignalMasterTable.parquet"
+ ]
+}

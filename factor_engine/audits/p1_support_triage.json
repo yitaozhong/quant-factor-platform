@@ -1,0 +1,344 @@
+{
+  "_meta": {
+    "generated": "2026-07-24",
+    "source": "8-agent support-residual triage, cell-sampled"
+  },
+  "triage": [
+    {
+      "factor": "AM",
+      "verdict": "covered_by_existing_register_entry",
+      "mechanism": "Engine computes at/mve_permco over the full m_aCompustat-x-monthlyCRSP grid; AM.py L33 inner-joins with SignalMasterTable, so oracle support additionally requires SMT membership (shrcd 10/11/12, exchcd 1/2/3). 10/10 sampled extra cells (e.g. 75456 1999-03, 90092 2015-03) have an m_aCompustat row and a monthlyCRSP row at t but are NOT in SMT; all 281,901 extras are off-SMT cells and missing=0. smt_strict mask at emit gives exact oracle parity.",
+      "action": "Covered by p1_universe_policy.json policy AM=smt_strict (applied at emit time) \u2014 the SMT universe masking family (shrcd 10/11/12 & exchcd 1/2/3) in p1_deviation_register.md."
+    },
+    {
+      "factor": "Accruals",
+      "verdict": "covered_by_existing_register_entry",
+      "mechanism": "Accruals.py L77-82 lags all balance-sheet inputs via positional groupby(permno).shift(12) over gappy m_aCompustat rows. 10/10 sampled oracle-only cells have a Compustat row at t, NO row at calendar t-12, and the positional lag landing on a staler month (e.g. permno 76928 2021-08 differenced against 1992-08; 58625 1983-01 against 1981-09). Engine uses calendar lags and correctly leaves NaN. Measured missing=15,359, extra=0 \u2014 exactly the residual recorded in the register.",
+      "action": "Covered by register section A 'Accruals' plus 'Accruals, ChEQ, DolVol \u2014 calendar vs positional lags (residual support)' which records the 15,359 missing-in-engine cells."
+    },
+    {
+      "factor": "AccrualsBM",
+      "verdict": "needs_support_fix",
+      "mechanism": "Three engine-vs-script differences in the quintile machinery, proven cell-exact by recomputing month cross-sections: (i) sample \u2014 AccrualsBM.py L80 right-joins to SignalMasterTable so fastxtile breakpoints (L117-121) are computed over SMT rows only, while engine _op_accruals_bm_signal buckets over the full CRSP/Compustat grid; extra non-SMT observations shift breakpoints and flip boundary cells inside SMT (84032 2018-04: BM sample 4088 vs 3436 -> engine qBM=4 vs script 5, oracle 1.0 lost; 90971 2019-06: engine qBM=1 vs script 2 -> engine manufactures 0.0); (ii) emission \u2014 engine emits indicators on non-SMT rows the oracle can never contain: 23,257 of 31,139 extras have smt=0; (iii) binning \u2014 engine _row_bucket (percentile-rank ceil) vs script fastxtile (pandas linear-interpolation quantile cutpoints at i/5, strictly-greater assignment): 41558 1969-01 gets qAcc=2 under rank-bucket even on the correct SMT sample but qAcc=1 under fastxtile, recovering the oracle 1.0. Missing=16,779 (all in-SMT: 16,301 lost 1s + 478 lost 0s); extras=31,139 (23,257 off-SMT + 7,882 in-SMT boundary flips, mostly manufactured 0s: 7,691).",
+      "action": "Wrap both cross-sectional inputs of the kernel in smt_only so breakpoints and emission match the script's SMT sample: \"AccrualsBM\": O(\"accruals_bm_signal\", O(\"smt_only\", LOG(DIV(ceq, m_mve))), O(\"smt_only\", DIV(SUB(SUB(DELTA(act,12), DELTA(che,12)), SUB(SUB(DELTA(lct,12), DELTA(dlc,12)), DELTA(txp,12))), avg_at)), ceq) (p1_factor_specs.py:780-791); AND replace _row_bucket in _op_accruals_bm_signal (p1_factor_engine.py:1225-1231) with fastxtile-equivalent binning (inf->NaN; <5 valid obs -> all bin 1; 2 unique values -> bins {1,5}; else linear-interpolation quantile cutpoints at i/5 with strictly-greater assignment). No SPAN_OUT/SMT_OUT output wrap needed beyond this (masked inputs already confine output to SMT). Residual after the fix is the calendar-vs-positional tempacc lag family (script shift(12) over the SMT right-join panel) \u2014 add AccrualsBM to the existing calendar-vs-positional register entry with re-measured counts."
+    },
+    {
+      "factor": "AdExp",
+      "verdict": "covered_by_existing_register_entry",
+      "mechanism": "Same footprint as AM: engine computes xad/mve wherever both inputs exist on the grid; the script restricts to SignalMasterTable membership. 10/10 sampled extra cells (e.g. 16298 2018-03, 18261 2024-06) have Compustat and CRSP rows at t but smt=0; all 62,000 residual cells are extras (missing=0), eliminated exactly by the smt_strict mask.",
+      "action": "Covered by p1_universe_policy.json policy AdExp=smt_strict (applied at emit time) \u2014 SMT universe masking family."
+    },
+    {
+      "factor": "AssetGrowth",
+      "verdict": "needs_support_fix",
+      "mechanism": "Two independent residuals. (a) missing=15,556: 10/10 sampled oracle-only cells are positional gap-lag bridges (mac row at t, none at calendar t-12, shift(12) landing 13 months to 10+ years back, e.g. 79365 2010-06 vs 2000-06) \u2014 already registered with this exact count. (b) extra=30: ALL 30 verified as native=inf where at(t-12 calendar)==0 (e.g. permno 82716 2000-06..2001-05: at(t)=1.021, at(t-12cal)=0.0; also 75733, 83411). AssetGrowth.py L66-70 guards l12_at==0 -> NaN so the oracle drops them, and the register's AssetGrowth entry explicitly claims this zero guard was adopted \u2014 but the spec \"AssetGrowth\": GROWTH(at, 12) (p1_factor_specs.py:572) expands to DIV(SUB(at, LAG(at,12)), LAG(at,12)) with no guard, so the frozen native emits inf and contradicts its own register entry.",
+      "action": "Replace \"AssetGrowth\": GROWTH(at, 12) at p1_factor_specs.py:572 with DIV(SUB(at, LAG(at, 12)), ZERO_TO_NULL(LAG(at, 12))) (same idiom as dNoa at L655 and InvestPPEInv's registered guard); no output wrap (none) and no fill-op change. The 15,556 missing side stays covered by the existing 'AssetGrowth' register entry (calendar-vs-positional family)."
+    },
+    {
+      "factor": "BMdec",
+      "verdict": "needs_support_fix",
+      "mechanism": "All 475,617 extras classified structurally against the script's row requirements (missing=0, joint values bit-identical). (A) 157,516 cells have NO monthlyCRSP row at month t: BMdec.py L64 inner-joins m_aCompustat with monthlyCRSP, so the script never emits when the stock is absent from CRSP that month, while the engine kernel (_op_bmdec_signal) emits wherever tempBE and the calendar-lagged December ME are defined \u2014 m_aCompustat's monthly expansion keeps rows through CRSP gaps and past delisting. (B) 318,101 cells have a CRSP row at t but the script's Dec-ME lookup fails on row presence: the calendar-lag merge (L120-137) can only fetch tempDecME from a MERGED-panel row at exactly t-12 (month>=6) / t-17 (month<6), and tempDecME itself (L78-82) is non-null only if the lag-year's December row is in the merged panel \u2014 280,800 extras lack both the merged lag row and the merged December row, 33,666 lack only the merged lag row, 3,635 have the lag row but no merged December row. The engine computes Dec ME directly from the CRSP December row (prc*shrout) and lags it 12/17 calendar months, emitting wherever the data genuinely exists; sampled cells confirm (e.g. 14271 2018-05 crsp=0; 73956 1984-12 and 22909 2024-02 crsp=1 but no Compustat row at t-12).",
+      "action": "Two-part: (1) support fix for mechanism A \u2014 mask the output to monthlyCRSP ROW presence: add a crsp_only output op (row-presence twin of smt_only, using the crsp_rows mask already built in p1_validation._candidate_masks) and wrap the spec \"BMdec\": O(\"crsp_only\", O(\"bmdec_signal\", ...)). SMT_OUT is WRONG here (~9.2% of oracle BMdec support is outside SMT \u2014 the script never filters on shrcd/exchcd) and a prc/shrout-notna proxy is inexact (36,712 monthlyCRSP rows have both null but still satisfy the script's inner join). (2) needs_register_entry for mechanism B's 318,101 cells \u2014 draft: 'BMdec: engine computes BE(t)/DecME(prior calendar year) with December market equity taken from the CRSP December row and lagged 12/17 calendar months. Reference BMdec.py fetches DecME by merging on a t-12/t-17 row of the m_aCompustat-x-CRSP inner panel and computes tempDecME only on merged rows, so it drops firm-months where the December ME exists in CRSP but the firm lacks a merged row at exactly the lag month or lacks Compustat coverage in the lag-year December. The reference is wrong: Fama-French 1992 Ln(BE/ME) requires only current book equity and the prior December price/shares; the merged-row-presence requirement is a lookup-implementation artifact. ~318k engine-only cells (CRSP row present at t) are retained by design; values bit-identical wherever both sides emit.'"
+    },
+    {
+      "factor": "BPEBM",
+      "verdict": "covered_by_existing_register_entry",
+      "mechanism": "Engine computes bp - ebm from Compustat/CRSP wide panels grid-wide; ZZ1_EBM_BPEBM.py builds on the SignalMasterTable universe, so oracle support requires SMT membership. 10/10 sampled extra cells (e.g. 12093 2020-02, 86403 1999-07) have mac and CRSP rows at t but smt=0; all 278,434 residuals are extras (missing=0), eliminated exactly by the smt_strict mask (sibling factor EBM carries the same smt_strict policy).",
+      "action": "Covered by p1_universe_policy.json policy BPEBM=smt_strict (applied at emit time) \u2014 SMT universe masking family."
+    },
+    {
+      "factor": "CF",
+      "verdict": "covered_by_existing_register_entry",
+      "mechanism": "CF = (ib+dp)/mve on exactly the same m_aCompustat-x-monthlyCRSP row structure as AM (extra count 281,901 is identical to AM's, and the sampled extra cells are the same permno-months, e.g. 75456 1999-03, 12275 1991-04); the script inner-joins with SignalMasterTable while the engine emits on the unfiltered grid. 10/10 sampled extras have smt=0 with mac and CRSP rows present; missing=0; smt_strict mask gives exact parity.",
+      "action": "Covered by p1_universe_policy.json policy CF=smt_strict (applied at emit time) \u2014 SMT universe masking family."
+    },
+    {
+      "factor": "CashProd",
+      "verdict": "covered_by_existing_register_entry",
+      "mechanism": "Extras (281,901) are universe cells: script CashProd.py inner-joins m_aCompustat with SignalMasterTable (L70) so output exists only on SMT permno-months (shrcd 10/11/12, exchcd 1/2/3); the engine evaluates (mve_permco-at)/che on the wider grid. Full-population check: 0 of 281,901 extra cells are in SignalMasterTable (10/10 sampled shown, e.g. 1999-03 p75456, 2015-03 p90092 \u2014 all inSMT=False). missing=0, so the script's unguarded che==0 inf cells create no residual.",
+      "action": "p1_universe_policy.json: CashProd = 'smt_strict' (policy != UNRESOLVED, SMT mask applied at emit time) \u2014 same SMT-universe-masking family already documented in the register (Herf/UpRecomm/DownRecomm entries)."
+    },
+    {
+      "factor": "ChAssetTurnover",
+      "verdict": "needs_support_fix",
+      "mechanism": "13,508 of 13,520 missing cells: script ChAssetTurnover.py L49 forward-fills ppent per permno before building temp=(rect+invt+aco+ppent+intan)-(ap+lco+lo); the engine tree uses raw ppent, so cells where ppent is NaN at t (or t-12/t-24) in m_aCompustat go NaN. Sampled 10/10: ppent NaN at t (8 also at t-12/t-24) and replicating the script WITH ffill reproduces the oracle bit-exactly (e.g. 2023-03 p59628 -> 7.95175; 2006-02 p87026 -> 0.131995). The remaining 12 missing cells are oracle inf (avg net-operating-assets denominator = 0), already the documented inf->NaN deviation in the register's ChAssetTurnover entry (which asserts the ffill is adopted methodology \u2014 the tree just never implemented it).",
+      "action": "Tree change in p1_factor_specs.py:536 \u2014 total_assets_soliman = SUB(ADD(rect, invt, aco, FFILL(ppent), intan), ADD(ap, lco, lo)), where FFILL is a new unary per-permno forward-fill along time on the monthly wide grid (NOT span_fill/smt_fill value fills; no span cap \u2014 the carry must cross m_aCompustat coverage gaps to match the script's present-row ffill; safe because all other temp components stay NaN off-Compustat rows). Applies to both the current term and its LAG(...,12)/LAG(...,24) copies via DELTA(asset_turnover,12). Output wrap: none. The 12 oracle-inf cells remain covered by the existing ChAssetTurnover register entry."
+    },
+    {
+      "factor": "ChEQ",
+      "verdict": "covered_by_existing_register_entry",
+      "mechanism": "All 11,817 missing cells are positional-vs-calendar lag gap cells: sampled 10/10 have an m_aCompustat row at t but NO row at calendar t-12, and the script's positional groupby.shift(12) (ChEQ.py L49) lands 13-48+ months back (e.g. p19289 1987-04 lagged against 1983-04; p27247 1990-09 against 1986-09), emitting ceq/l12_ceq from stale data where the engine's calendar lag is correctly NaN. extra=0; joint values bit-identical.",
+      "action": "Register section 'Accruals, ChEQ, DolVol \u2014 calendar vs positional lags (residual support)' \u2014 lists ChEQ's exact residual of 11,817 missing-in-engine cells."
+    },
+    {
+      "factor": "ChForecastAccrual",
+      "verdict": "needs_support_fix",
+      "mechanism": "EXTRAS (62,805): engine _op_chforecast_accrual_signal (p1_factor_engine.py:2630) attaches meanest via _ibes_permno_month_map/IBESCRSPLinkingTable; script (ChForecastAccrual.py L47-55) gets tickerIBES from a SignalMasterTable left join, so non-SMT permno-months never receive meanest. Full check: 62,577/62,805 extras are outside SMT; the 228 in-SMT extras are link-table ticker->permno assignments that differ from SMT's. MISSES (1,651): engine computes the six accrual lags with positional grouped.shift(12) (engine L2634-2643); script uses calendar-exact t-12 merges (L63-78). Sampled 10/10: 8 cells have calendar tempAccruals=NaN \u2014 the script KEEPS them (L119 nulls only tempsort==1; NaN tempsort survives) while the engine's positional lag manufactures a stale below-median accrual -> tempsort=1 -> nulled; 2 cells sit exactly on the qcut median boundary of the shifted pool and flip bins (e.g. p75808 1996-11: ta=0.013054 = engine-pool median -> bin 1, > script-pool median 0.0130296 -> bin 2).",
+      "action": "Two changes inside _op_chforecast_accrual_signal (no tree node; bespoke op): (1) source permno->tickerIBES from SignalMasterTable per month (left join on [permno,time_avail_m]) instead of _ibes_permno_month_map \u2014 this makes the output universe m_aCompustat\u2229SMT\u2229IBES automatically (SMT_OUT wrap alone would leave the 228 wrong-ticker extras and fix no misses); (2) replace grouped.shift(12) with calendar t-12 merge lags for act/che/lct/dlc/txp/at (script create_calendar_lag equivalent). Output wrap: none beyond the SMT-sourced map; span_fill/smt_fill: none."
+    },
+    {
+      "factor": "ChInv",
+      "verdict": "covered_by_existing_register_entry",
+      "mechanism": "All 15,586 missing cells are across-gap positional-lag cells: sampled 10/10 have an m_aCompustat row at t, none at calendar t-12, and the script's positional shift(12) (ChInv.py L38-39) lands 13-108 months back (e.g. p68056 1991-07 lagged against 1982-07; p77173 2012-11 against 2006-11), so the oracle's 'annual' inventory change uses multi-year-old data where the engine's calendar DELTA is NaN. extra=0; joint values bit-identical.",
+      "action": "Register section 'ChInv' \u2014 states the exact residual: 'The 15,586 across-gap oracle cells are masked as oracle_artifact in reconciliation.'"
+    },
+    {
+      "factor": "ChNNCOA",
+      "verdict": "covered_by_existing_register_entry",
+      "mechanism": "Identical family to ChInv: all 15,252 missing cells sampled 10/10 have an m_aCompustat row at t, none at calendar t-12, positional shift(12) of temp=((at-act-ivao)-(lt-dlc-dltt))/at (ChNNCOA.py L54) landing 13-240 months back (e.g. p22947 1983-01 differenced against 1963-01; p28338 1995-01 against 1982-01). extra=0; joint values bit-identical.",
+      "action": "Register section 'ChNNCOA' \u2014 states the exact residual: 'The 15,252 across-gap oracle cells are masked as oracle_artifact.'"
+    },
+    {
+      "factor": "ChNWC",
+      "verdict": "needs_support_fix",
+      "mechanism": "All 54 extras are engine inf cells on 4 permnos (83411 x18, 82716 x12, 81249 x12, 84185 x12). Sampled 12/12: at(t-12)=0.0 with nonzero NWC numerator (e.g. p82716 2000-06..2001-05: at_l12=0.0, num_l12=-1.215) \u2014 script ChNWC.py L43 sets at<=0 -> NaN BEFORE dividing, so l12_NWC is NaN and the row is dropped; the engine tree nwc_ratio = DIV(SUB(SUB(act,che),SUB(lct,dlc)), at) (p1_factor_specs.py:528) has no gate, computes NWC_l12 = num/0 = -inf, and DELTA emits ChNWC=+inf which survives to the wide panel as support. (The semantics file's multi-gvkey dup-row shift risk is NOT the mechanism \u2014 none of the 4 permnos has duplicate permno-months.)",
+      "action": "Tree change in p1_factor_specs.py:528 \u2014 nwc_ratio = DIV(SUB(SUB(act, che), SUB(lct, dlc)), POSITIVE_ONLY(at)) (positive_only = x.where(x>0), exactly the script's at<=0->NaN gate). Gate sits inside the ratio, i.e. pre-DELTA, so the lagged side sees NaN like the script's pre-lag null. nwc_ratio is used only by ChNWC (no collateral). Output wrap: none; fills: none. Kills all 54 inf extras; matches the register's standing inf->NaN discipline (ChTax/ChAssetTurnover/TotalAccruals precedents)."
+    },
+    {
+      "factor": "ConsRecomm",
+      "verdict": "needs_support_fix",
+      "mechanism": "EXTRAS (18,547): engine _op_binary_recommendation_level expands ticker->permno via IBESCRSPLinkingTable; script ConsRecomm.py L76 inner-merges the ticker-month consensus with SignalMasterTable. Full check: 0/18,547 extras are SMT member permno-months. MISSES (37): engine's _ibes_permno_month_map dedups drop_duplicates([tickerIBES,time_avail_m], keep='first'), keeping ONE permno per ticker-month, while the script's SMT merge fans out to every permno sharing the ticker \u2014 sampled 12: 11 are multi-permno SMT ticker-months (e.g. CIT1 1993-11 -> SMT permnos [23879,23887], engine kept only 23879; CDG2 -> [64899,69796]; CMCS -> [11997,25022]); 1 (NGL 1995-03 p81594) is a link-table mapping to a different permno (79925) than SMT's (81594).",
+      "action": "Op/infrastructure change in _op_binary_recommendation_level: expand the collapsed ticker-month consensus to permnos by inner-merging on SignalMasterTable [tickerIBES, time_avail_m] with FULL fan-out (drop the keep-first dedup) \u2014 this is simultaneously the SMT_OUT universe restriction (removes all 18,547 extras) and the multi-permno fan-out fix (recovers all 37 misses, including the wrong-permno NGL case). Equivalent DSL framing: SMT_OUT output wrap + SMT-sourced ticker->permno map; span_fill/smt_fill: none. No tree change."
+    },
+    {
+      "factor": "DebtIssuance (missing=358,000)",
+      "verdict": "covered_by_existing_register_entry",
+      "mechanism": "All sampled missing cells (10/10) have oracle=0.0 at permno-months where m_aCompustat dltis is NaN but the SMT row exists with shrcd<=11 and BM=log(ceq/mve_permco) defined \u2014 DebtIssuance.py:54 codes the indicator as 0 when dltis is missing ((df['dltis']>0).astype(int) on unreported values). The engine's positive_indicator preserves NaN (p1_factor_engine.py:962-963), so it deliberately emits nothing there. Count matches the register's ~358k.",
+      "action": "Register section A 'DebtIssuance' \u2014 'reference codes DebtIssuance=0 when dltis is missing ... Oracle cells whose only support is the NaN-to-0 fill are masked as oracle_artifact in reconciliation.'"
+    },
+    {
+      "factor": "DebtIssuance (extra=669,237)",
+      "verdict": "needs_support_fix",
+      "mechanism": "The spec is bare O('positive_indicator', dltis) (p1_factor_specs.py:639) with no universe conditioning, so the engine emits 0/1 on every m_aCompustat grid cell with dltis reported. Sampled 400 extras: 276 (69%) are permno-months absent from SignalMasterTable, 78 (19.5%) are SMT rows with shrcd=12 (script's shrcd>11 exclusion, DebtIssuance.py:57), 46 (11.5%) are SMT rows where BM=log(ceq/mve_permco) is undefined (ceq missing or ceq<0, script L51/L58). The register entry explicitly says the engine ADOPTS these gates as correct methodology, but the tree never implements them; policy is UNRESOLVED so no emit-time mask rescues it.",
+      "action": "DSL change in p1_factor_specs.py:639 \u2014 wrap output SMT_OUT and add the two script gates, no fills: DebtIssuance = SMT_OUT(ADD(O('positive_indicator', dltis), MUL(C(0.0), LOG(DIV(ceq, O('smt_only', m_mve)))))) with an additional shrcd<=11 mask on the monthlyCRSP shrcd panel (same .where(shrcd<=11) pattern as _op_rolling_industry_herfindahl, engine:1262; null shrcd kept per script NaN>11==False semantics). Caveat: the script keeps the ceq==0 -> BM=-inf edge rows, so if the 0*LOG gate is used, ceq==0 must be treated as defined (0*-inf=NaN would wrongly drop it) \u2014 a small dedicated gate op (e.g. O('bm_defined_gate', x, ceq, m_mve)) is the clean implementation. Missing side stays covered by the existing register entry (do not fill dltis)."
+    },
+    {
+      "factor": "DelCOA",
+      "verdict": "covered_by_existing_register_entry",
+      "mechanism": "10/10 sampled missing cells have a positional 12th-prior m_aCompustat row but NO observation at calendar t-12 (e.g. permno 39731 1996-04 differenced against 1994-10; 11379 2022-11 against 2020-11) \u2014 DelCOA.py:51-53 positional groupby.shift(12) bridges coverage gaps, engine's calendar DELTA(\u00b7,12) correctly yields NaN. Extra=0. Count 15,586 matches the register entry exactly.",
+      "action": "Register section A 'DelCOA' \u2014 'The 15,586 across-gap oracle cells are masked as oracle_artifact.'"
+    },
+    {
+      "factor": "DelCOL",
+      "verdict": "needs_register_entry",
+      "mechanism": "Identical mechanism to DelCOA but no register entry names DelCOL: 10/10 sampled missing cells have a positional row-12 in m_aCompustat but no calendar t-12 observation (e.g. permno 89986 2023-03 lagged against 2009-03, 14 years stale; 89168 2011-10 against 2007-10) \u2014 DelCOL.py:64-66 positional groupby.shift(12) of lct/dlc/at over gappy deduped rows. Engine uses strict calendar lags and emits NaN. Extra=0; values bit-identical on joint support. The 15,359 count equals the registered Accruals residual because both signals' inputs share the act/lct coverage footprint.",
+      "action": "Draft register entry (section A): '### DelCOL \u2014 DelCOL: engine computes ((lct-dlc)_t - (lct-dlc)_{t-12cal}) / (0.5*(at_t + at_{t-12cal})) with strict calendar lags; reference DelCOL.py:64-66 uses positional groupby.shift(12) on deduped m_aCompustat rows, so across coverage gaps the lagged lct/dlc/at come from 13 months to 14+ years earlier (e.g. permno 89986 2023-03 differenced against 2009-03; miss mask matches Accruals'' 15,359-cell coverage footprint). The reference is wrong: Richardson et al. (2005) defines a one-year change scaled by one-year-average assets; OSAP''s Stata original used calendar l12. Correct definition: NaN whenever no observation exists exactly 12 calendar months prior. The 15,359 across-gap oracle cells are masked as oracle_artifact.'"
+    },
+    {
+      "factor": "DelDRC (missing=1,884)",
+      "verdict": "needs_register_entry",
+      "mechanism": "Same calendar-vs-positional family: 10/10 sampled missing cells have a positional 12th-prior m_aCompustat row but no calendar t-12 observation (e.g. permno 81575 2011-05 lagged against 1999-05 \u2014 12 years stale; 82511 2013-02 against 2006-02) \u2014 DelDRC.py:70-71 positional groupby.shift(12) of drc/at. Engine's calendar DELTA(drc,12)/avg_at yields NaN there. Count is small (1,884 vs ~15k siblings) because drc coverage is mostly post-2000.",
+      "action": "Draft register entry (section A): '### DelDRC \u2014 calendar vs positional 12-month lag (residual support) \u2014 Same family as DelCOA/ChInv: reference DelDRC.py:70-71 lags drc/at via positional groupby.shift(12) over deduped m_aCompustat rows, so across coverage gaps the ''annual'' change in deferred revenue is differenced against data 13 months to 12+ years old (sampled: permno 81575 2011-05 vs 1999-05). Engine uses strict calendar t-12 lags and emits NaN when no m_aCompustat observation exists exactly 12 calendar months prior. The 1,884 across-gap oracle cells are masked as oracle_artifact.'"
+    },
+    {
+      "factor": "DelDRC (extra=2,786,464)",
+      "verdict": "needs_support_fix",
+      "mechanism": "The spec is bare DIV(DELTA(drc,12), avg_at) (p1_factor_specs.py:642) and implements NONE of the script's four sample-exclusion filters (DelDRC.py:81-89, from Prakash-Sinha deferred-revenue methodology). Sampled 600 extras: 560 (93%) are drc==0 & DelDRC==0 cells (firms with no deferred revenue in either year \u2014 engine emits 0.0, script nulls), 29 (5%) ceq<=0, 8 (1.3%) sale<5, 3 (0.5%) SIC 6000-6999 financials. These filters are deliberate reference methodology (the predictor is only defined for non-financial firms with actual deferred-revenue activity), so the engine must adopt them.",
+      "action": "DSL change in p1_factor_specs.py:642 \u2014 output wrap none (m_aCompustat-driven, no SMT), no fills; add the script's exclusion mask: DelDRC = O('deldrc_sample_filter', DIV(DELTA(drc,12), avg_at), drc, ceq, sale, sic) \u2014 new op nulling cells where (ceq<=0) | (drc==0 & signal==0) | (sale<5) | (6000<=sic<7000), each leg via x.where(~cond) so NaN ceq/sale/sic does NOT exclude (script NaN-comparison-False semantics; sic pd.to_numeric errors='coerce'). The SIC leg alone could reuse NONFINANCIAL_ONLY(x, sic) (matching null-kept semantics, engine:966-969) but the ceq/sale/drc legs need the composite op since POSITIVE_ONLY-style gates would wrongly drop null-ceq/sale rows the script keeps."
+    },
+    {
+      "factor": "DolVol",
+      "verdict": "covered_by_existing_register_entry",
+      "mechanism": "300/300 sampled extras are months t where the permno has NO monthlyCRSP row (t-1/t-2 rows present with valid vol/prc) \u2014 the engine's calendar LOG(LAG(vol*|prc|,2)) on the wide grid emits values 1-2 months into delistings/listing gaps, while DolVol.py emits only on raw monthlyCRSP rows (positional shift(2)). missing=0 and joint values bit-identical. Count 30,177 matches the register line exactly, and the spec already carries the pointer comment (p1_factor_specs.py:890-893).",
+      "action": "Register section A 'Accruals, ChEQ, DolVol \u2014 calendar vs positional lags (residual support)' \u2014 'DolVol 30,177 engine-only cells (raw-CRSP universe, no SMT filter in its script)'."
+    },
+    {
+      "factor": "EBM",
+      "verdict": "covered_by_existing_register_entry",
+      "mechanism": "300/300 sampled extras are permno-months absent from SignalMasterTable (0 were SMT rows): the engine computes (ceq+temp)/(mve_permco+temp) on the full monthlyCRSP x m_aCompustat grid, while ZZ1_EBM_BPEBM.py's universe is m_aCompustat INNER-joined to SMT (shrcd 10/11/12 & exchcd 1/2/3). Since engine support is otherwise confined to m_aCompustat rows with CRSP mve, the SMT mask alone reaches exact parity \u2014 which is exactly what the measured policy records.",
+      "action": "p1_universe_policy.json: EBM = 'smt_strict' (policy != UNRESOLVED, applied at emit time) \u2014 the emit-time SMT mask removes all 278,434 extras; family documented as SMT universe masking (shrcd 10/11/12 & exchcd 1/2/3)."
+    },
+    {
+      "factor": "EP",
+      "verdict": "needs_support_fix",
+      "mechanism": "Two mechanisms, both engine-side support defects vs adopted reference methodology (policy UNRESOLVED, no register entry). MISSING (516): all sampled cells have ib==0 -> oracle EP=0.0; EP.py:62 nulls only EP<0 (keeps zero earnings yield), but the spec's POSITIVE_ONLY (p1_factor_specs.py:660; engine x.where(x>0)) drops EP==0. EXTRA (274,313): sampled 300 \u2014 299 are permno-months not in SMT at t (script panel IS SignalMasterTable; engine emits on the unfiltered grid), 1 is an SMT row at t whose t-6 month is not an SMT row (script's calendar self-merge lag of mve_permco on the SMT panel finds nothing, EP.py:50-56, while the engine's LAG(m_mve,6) reads raw monthlyCRSP mve at t-6).",
+      "action": "DSL change in p1_factor_specs.py:660 \u2014 EP = SMT_OUT(NEGATIVE_TO_NULL(DIV(ib, LAG(O('smt_only', m_mve), 6)))): (1) output wrap SMT_OUT (kills the ~274k non-SMT extras), (2) lag source smt_only-masked mve so the 6-month lag exists only when t-6 is an SMT row, reproducing the script's self-merge (kills the residual extras), (3) POSITIVE_ONLY -> NEGATIVE_TO_NULL (engine x.where(x>=0)) to keep EP==0 rows (recovers the 516 missing). No span/smt fill."
+    },
+    {
+      "factor": "EarningsForecastDisparity",
+      "verdict": "needs_support_fix",
+      "mechanism": "Both sides trace to the engine op building its permno panel from IBESCRSPLinkingTable instead of SignalMasterTable (policy UNRESOLVED). EXTRA (80,565): 300/300 sampled cells are permno-months absent from SMT \u2014 _op_earnings_forecast_disparity_signal (p1_factor_engine.py:2573) merges IBES onto _ibes_permno_month_map, whose linking-table rows extend beyond SMT's shrcd/exchcd universe, while the script's panel IS SignalMasterTable (EarningsForecastDisparity.py L39-42). MISSING (254): _ibes_permno_month_map dedups the linking table on [tickerIBES, time_avail_m] keep='first', so when one IBES ticker maps to two permnos in a month only the first gets the signal \u2014 10/10 sampled missing cells are the dropped second permno (e.g. tickerIBES KVPH -> kept 46950, missing 77158; CIT1 -> kept 23879, missing 23887), whereas the script emits on every SMT row carrying that tickerIBES.",
+      "action": "Support fix inside the op (SMT_OUT-equivalent base, no fills): in _op_earnings_forecast_disparity_signal, replace _ibes_permno_month_map(store) with the SignalMasterTable (permno, time_avail_m, tickerIBES) pairs (tickerIBES non-null, NO keep-first dedup across permnos) and left-merge the short/long/actuals IBES frames onto that \u2014 this restricts output to SMT rows (removes all 80,565 extras) and fans one ticker out to all SMT permnos sharing it in the month (recovers the 254 missing)."
+    },
+    {
+      "factor": "EntMult",
+      "verdict": "needs_support_fix",
+      "mechanism": "Missing 72,682 (100% verified): all are SMT permno-months whose m_aCompustat row has ceq=NaN with every formula component (mve_permco,dltt,dlc,dc,che,oibdp) present; the engine screen at p1_factor_engine.py:985 uses inclusion semantics value.where((ceq>=0)&(oibdp>=0)) so missing ceq NaN-fails, while EntMult.py L43 excludes only (ceq<0)|(oibdp<0) \u2014 NaN compares False and passes (both pandas and the Stata original). Extra 190,377 (100% verified outside SMT): engine computes on the raw monthlyCRSP-grid mve_permco wherever Compustat spread rows exist; the script's universe is m_aCompustat INNER SignalMasterTable, so non-SMT months never appear in the oracle.",
+      "action": "Two-part DSL change: (1) screen semantics in enterprise_multiple op \u2014 replace value.where((ceq >= 0) & (oibdp >= 0)) with value.where(~((ceq < 0) | (oibdp < 0))) so unobserved ceq passes the negative-book-equity screen (recovers all 72,682 missing); (2) output wrap SMT_OUT (mask emitted cells to SignalMasterTable permno-months) to remove all 190,377 extras. No source fill change (source fill: none)."
+    },
+    {
+      "factor": "FEPS",
+      "verdict": "needs_support_fix",
+      "mechanism": "Extra 219,612 (100% verified outside SMT): _op_feps_signal maps IBES fpi='1' meanest to permnos via IBESCRSPLinkingTable over every month the link exists, but FEPS.py left-joins IBES onto SignalMasterTable, so the oracle exists only on SMT rows. Missing 466 (466/466 verified): the engine's _ibes_permno_month_map does drop_duplicates(['tickerIBES','time_avail_m'], keep='first'), so a ticker-month with two linked permnos (e.g. ASAL 1997-10 -> [15617, 83239]) delivers meanest only to the first permno, while the script's SMT-side tickerIBES column broadcasts the estimate to every SMT permno carrying that ticker that month.",
+      "action": "Source fill change: smt_fill \u2014 map fpi='1' meanest onto SignalMasterTable (permno, time_avail_m) via SMT's own tickerIBES column (the script's left-merge), replacing the IBESCRSPLinkingTable keep-first map in _op_feps_signal; output wrap SMT_OUT (implied by the smt_fill source). Fixes both sides: 466 missing recovered by the many-permno fan-out, 219,612 extras removed by the SMT domain."
+    },
+    {
+      "factor": "FirmAgeMom",
+      "verdict": "needs_support_fix",
+      "mechanism": "Proven by exact reconstruction of both pipelines (oracle support 550,955 and native 424,871 both reproduced bit-identically). Missing 361,005: (a) 341,441 \u2014 quintile bucketing: engine uses ceil(rank_pct*5) over ALL CRSP stocks with presence-based age, script uses pd.qcut(q=5,duplicates='drop') over the filtered cross-section (SMT rows with |prc|>=5-or-NaN and age>=12); heavy age ties make qcut's quintile-1 band far wider (sampled cells: identical ages, script q=1 vs engine q=2-3); (b) 19,276 \u2014 engine age = prc-presence cumsum on monthlyCRSP, NaN when prc is missing at t (plus the original-firm mask), while the script's cumcount age counts every SMT row and missing prc passes its price filter; (c) 288 \u2014 age<12 gate: SMT row count vs prc-presence count. Extra 234,921: (a) 140,787 outside SMT (engine on raw CRSP grid); (b) 93,776 \u2014 engine FILLNA(ret,0) over the whole grid manufactures 6-month momentum where the script's stata_multi_lag (fill_gaps AFTER the price/age filter and fillna(0)) re-inserts filtered/gap months with NULL ret, making the oracle product NaN; (c) 358 minor quintile/filter boundary.",
+      "action": "Rework firm_age_momentum op to script semantics: (1) age = cumulative SMT row count per permno (source: SignalMasterTable rows, not monthlyCRSP prc presence; drop the presence/original-firm construction); (2) momentum lags l1..l5 use ret zero-filled ONLY on actual SMT rows and are NULL when the lag month is not a kept (price>=5-or-NaN & age>=12) row \u2014 i.e. smt_fill source for ret with post-filter gap semantics, no grid-wide FILLNA(ret,0); (3) age quintile via qcut-equivalent value breakpoints computed over the filtered SMT cross-section per month (precedent: std_turn's qcut-equivalent fix); (4) output wrap SMT_OUT."
+    },
+    {
+      "factor": "GP",
+      "verdict": "covered_by_existing_register_entry",
+      "mechanism": "Counts match the register exactly (19,967 missing / 26,868 extra). Sampled 10 missing: all have header sic non-financial (e.g. 7350, 9995, 1040) so the script keeps them, but historical sich financial (6798, 6331, 6795...) so the engine's point-in-time screen excludes. Sampled 10 extra: header sic financial (6798, 6512, 6794...) so GP.py L40 drops them, but sich non-financial (7948, 2030, 3350...) so the engine keeps. Pure universe-membership flips from the sich-vs-header industry code deviation; values bit-identical on joint support.",
+      "action": "Register section 'B. GP, tang \u2014 point-in-time industry classification' (also 'GP [lookahead_confirmed]' in the look-ahead audit section)."
+    },
+    {
+      "factor": "GrAdExp",
+      "verdict": "needs_support_fix",
+      "mechanism": "Missing 76,961 splits three ways: (a) 63,702 outside SMT \u2014 m_aCompustat rows with no SMT/CRSP match have fully defined GrAdExp (xad and calendar t-12 xad present) and NaN size; the script's exclusion filter (set NaN if tempSize==1) passes NaN deciles so the oracle keeps them, while the engine's _op_size_decile_filtered inclusion mask (ranks>=0.1) NaN-fails them; (b) 10,855 in-SMT with the calendar t-12 comp row present \u2014 size-decile boundary/population mismatch: engine ranks monthlyCRSP mve_permco over the full CRSP cross-section with rank-pct, script qcuts SMT mve_c over the m_aCompustat-merged rows only (includes the 367 oracle +inf lagged-xad==0 cells); (c) 2,404 in-SMT with NO calendar t-12 comp row \u2014 the script's positional shift(12) reaches a staler base month (e.g. permno 86866 2022-02 lags to 2020-02): the registered calendar-vs-positional family, correctly NaN in the engine. Extra 4,320 (100% in SMT, 100% with calendar t-12 present): tiny-cap decile-1 boundary cells the script's qcut drops but the engine's rank keeps.",
+      "action": "DSL change to the size screen: size source = SignalMasterTable mve_c (replace m_mve = monthlyCRSP mve_permco); deciles via qcut-equivalent breakpoints computed per month over the m_aCompustat-row population (the script's merged panel), and exclusion semantics \u2014 null only where decile==1, NaN size/decile PASSES (x.where(~(decile == 1))). Source fill: none; output wrap: none (universe is m_aCompustat-driven, NOT SMT \u2014 do not add SMT_OUT). The 2,404 gap-lag oracle-only residual is the calendar-vs-positional deviation: extend the existing 'calendar vs positional lags (residual support)' register family entry to name GrAdExp."
+    },
+    {
+      "factor": "GrLTNOA",
+      "verdict": "covered_by_existing_register_entry",
+      "mechanism": "Counts match the register entry exactly (15,333 missing, 0 extra). Sampled 10 missing: every cell has NO m_aCompustat row at calendar t-12 but >=12 prior rows, so the script's positional groupby.shift(12) (GrLTNOA.py L83-86) lags to a staler month (e.g. permno 84411 2022-12 lags to 2003-12, 19 years back) while the engine's calendar LAG(...,12) is correctly NaN.",
+      "action": "Register section 'GrLTNOA' (section A: positional-vs-calendar 12-month lags over gappy m_aCompustat; 15,333 oracle-only cells dropped as artifacts, zero extras)."
+    },
+    {
+      "factor": "InvestPPEInv",
+      "verdict": "needs_support_fix",
+      "mechanism": "Missing 14,319: sampled 8/8 have no m_aCompustat row at calendar t-12 with >=12 prior rows (positional shift(12) reaches stale months, e.g. permno 11153 2023-06 lags to 1993-06) \u2014 exactly the existing 'InvestPPEInv' register entry. Extra 30 (all 30 enumerated): native emits +inf at cells where the calendar-lag at(t-12)==0 (permnos 82716, 83411, 75733) while the oracle's np.where guard (InvestPPEInv.py L82-86) maps l12_at==0 to NaN. The register entry claims 'engine tree amended with ZERO_TO_NULL on the denominator, eliminating 30 spurious inf cells', but the current spec at p1_factor_specs.py:881 is DIV(ADD(DELTA(ppegt,12), DELTA(invt,12)), LAG(at,12)) \u2014 the guard was never applied (or the golden native predates it).",
+      "action": "Apply the already-registered tree amendment: change p1_factor_specs.py:881 to DIV(ADD(DELTA(ppegt, 12), DELTA(invt, 12)), ZERO_TO_NULL(LAG(at, 12))) and re-freeze the golden native (removes all 30 inf extras). Source fill: none; output wrap: none. The 14,319 missing remain covered by the existing 'InvestPPEInv' register entry."
+    },
+    {
+      "factor": "Leverage",
+      "verdict": "covered_by_existing_register_entry",
+      "mechanism": "0 missing; all 281,509 extras verified outside SignalMasterTable membership (sampled cells have m_aCompustat lt and monthlyCRSP mve_permco but no SMT row): the engine computes lt/mve_permco on the raw monthlyCRSP grid across the Compustat spread span, while Leverage.py's universe is SignalMasterTable INNER m_aCompustat (lines 37-42). Within SMT the supports agree exactly, so the smt_strict mask achieves exact parity.",
+      "action": "p1_universe_policy.json: Leverage = 'smt_strict' (measured emit-time mask; policy != UNRESOLVED, counts as covered per the reconciliation procedure). No register text or tree change needed."
+    },
+    {
+      "factor": "MeanRankRevGrowth",
+      "verdict": "covered_by_existing_register_entry",
+      "mechanism": "Engine op weighted_lagged_rank_growth evaluates the 5-term weighted average of calendar-lagged ranks (t-12..t-60) on the wide grid; the value needs only the five lag-date ranks, not a current-month m_aCompustat row, so it emits at months the script cannot (the script's output frame IS m_aCompustat). 12/12 sampled extras (e.g. permno 89712 1997-01, 40985 1985-03) have no m_aCompustat row (and no SMT row) at t; joint-support values are bit-identical, confirming the rank universe itself matches.",
+      "action": "p1_universe_policy.json policy 'm_aCompustat_rows' (already recorded, applied at emit time) \u2014 masks all 139,762 extras exactly."
+    },
+    {
+      "factor": "NOA",
+      "verdict": "covered_by_existing_register_entry",
+      "mechanism": "Calendar-vs-positional 12-month lag: NOA.py L56 uses groupby(permno).shift(12) over gappy m_aCompustat rows; 12/12 sampled missing cells have a Compustat row at t, NO row at calendar t-12, and the oracle value reconstructs to 4 decimals from (OA-OL)/at(12th-prior ROW) \u2014 e.g. permno 81021 2019-08 scaled by at from 2007-08, permno 82848 2016-10 by at from 2008-10. Count matches the register verbatim (15,351 across-gap cells, 0 extras).",
+      "action": "Register section 'NOA' (A. calendar-vs-positional lags): the 15,351 across-gap oracle cells are masked as oracle_artifact."
+    },
+    {
+      "factor": "NetPayoutYield",
+      "verdict": "needs_support_fix",
+      "mechanism": "Exhaustive attribution of all 1,199,728 extras against the script pipeline: 348,091 outside SMT (engine emits on raw-grid comp rows; in-SMT-but-no-comp-row = 0, so inputs are never manufactured); 851,637 on merged SMT-and-comp rows the script drops \u2014 406,028 by the SIC-financial screen, 60,337 by the ceq<=0 screen, 380,689 by the <24 surviving-row positional gate, and ~125,823 (overlapping the above) have script-NaN Y because the t-6 mve_permco lag exists only via self-merge on merged rows while the engine lags mve on the calendar grid. Script emits 0 of the extras. The 828 missing are exactly the oracle's float32(1e-19) sentinel cells (all verified == 1e-19): the spec's blanket O(\"nonzero\") wrap drops the true-0.0 values the existing NetPayoutYield register entry says the engine stores.",
+      "action": "DSL: no span_fill/smt_fill on sources; (1) lag source = mve_permco masked to SMT-and-m_aCompustat merged rows BEFORE LAG(6) (no grid fill); (2) replace O(\"nonzero\") with conditional zero-drop \u2014 null only where dvc==0 & prstkc==0 & sstk==0, keeping the 828 true-0.0 cells (aligns native with the existing register entry and closes the missing side); (3) output wrap = SMT_OUT intersected with m_aCompustat-row mask, plus nonfinancial_only(sic) (NaN sic dropped \u2014 matches script), plus keep-mask (ceq>0 | ceq missing), plus a >=24 surviving-row per-permno positional gate counted over post-zero/SIC/ceq rows including NaN-Y rows."
+    },
+    {
+      "factor": "OperProf",
+      "verdict": "needs_support_fix",
+      "mechanism": "Engine _op_size_filtered (p1_factor_engine.py:988-1004) builds the size mask as pct-rank of raw monthlyCRSP mve_permco over the FULL grid with ranks > 1/3, dropping NaN-size rows; the script qcuts SMT mve_c per month over the SMT-inner-join-Compustat(gvkey) sample and KEEPS NaN-size rows (qcut NaN -> not tercile 1). Exhaustive attribution: extras 139,121 = 102,127 outside SMT + 36,994 script-tercile-1 rows the engine's shifted breakpoints keep (0 other); missing 41,194 = 38,262 script-tercile-2 rows the engine's rank-mask assigns to the bottom tercile + 2,908 NaN-mve_c rows the script keeps + 24 oracle +/-inf cells (ceq==0, script's unguarded division survives its save; engine NaN).",
+      "action": "DSL: size_filtered source = SMT mve_c masked to the SMT-and-m_aCompustat(gvkey-link) merged rows, breakpoints via per-month qcut-equivalent tercile edges (as already done for std_turn) instead of pct-rank>1/3, NaN-size rows kept (not excluded); output wrap = SMT_OUT. Residual 24 ceq==0 inf cells then need one register line under OperProf (established inf-vs-NaN family: ChTax/ChAssetTurnover/TotalAccruals precedent \u2014 engine NaN is correct, oracle inf is a reference defect)."
+    },
+    {
+      "factor": "OperProfRD",
+      "verdict": "needs_support_fix",
+      "mechanism": "Engine emits the formula everywhere inputs exist; script filters rows AFTER the SMT-x-Compustat(permno) inner merge (OperProfRD.py L55-61). Exhaustive attribution of all 846,979 extras: 350,745 outside SMT + 496,234 merged rows failing script filters \u2014 shrcd==12: 124,993 (script requires shrcd<=11, stricter than SMT's 10/11/12), sicCRSP in [6000,7000): 295,156, ceq missing: 82,759, mve_c missing: 3,052 (flags overlap; union exactly 496,234; 0 unexplained). missing=0 and joint values bit-identical, so this is purely an emission-mask gap.",
+      "action": "DSL: no source fills; output wrap = SMT_OUT plus masks: shrcd<=11, exclude 6000<=sicCRSP<7000 with NaN sicCRSP KEPT (script's ~((sic>=6000)&(sic<7000)) keeps NaN \u2014 engine's nonfinancial_only drops NaN, so use the exclusion-form mask), require ceq non-null and mve_c non-null (at non-null already implicit in DIV by at)."
+    },
+    {
+      "factor": "OrderBacklog",
+      "verdict": "covered_by_existing_register_entry",
+      "mechanism": "Calendar-vs-positional 12-month lag: OrderBacklog.py L33 shift(12) over gappy m_aCompustat rows; 12/12 sampled missing cells have no comp row at calendar t-12 and the oracle value reconstructs exactly as ob/(0.5*(at(t)+at(12th-prior ROW))) \u2014 e.g. permno 86319 2007-07 lag from 1999-07, permno 42542 1981-09 from 1977-09. Count matches the register verbatim (3,033 gap-lag cells, 0 extras).",
+      "action": "Register section 'OrderBacklog' (A. calendar-vs-positional lags): 3,033 oracle-only gap-lag cells dropped as artifacts."
+    },
+    {
+      "factor": "PayoutYield",
+      "verdict": "needs_support_fix",
+      "mechanism": "Same family as NetPayoutYield (no register entry or policy exists for PayoutYield). Exhaustive attribution of all 897,240 extras: 291,731 outside SMT (all on comp rows; inputs never manufactured); 605,509 merged rows the script drops \u2014 379,082 SIC-financial screen (NaN sic dropped), 44,507 ceq<=0 screen, 178,830 <24 surviving-row positional gate, and 68,376 (overlapping) with script-NaN Y because the t-6 mve_permco lag exists only on SMT-and-comp merged rows while the engine lags mve on the calendar grid. missing=0; joint values bit-identical.",
+      "action": "DSL: no span_fill/smt_fill; (1) lag source = mve_permco masked to SMT-and-m_aCompustat merged rows before LAG(6); (2) keep POSITIVE_ONLY (matches script's <=0 -> NaN, which stays IN the row count); (3) output wrap = SMT_OUT intersected with m_aCompustat-row mask + nonfinancial_only(sic) (NaN sic dropped) + keep-mask (ceq>0 | ceq missing) + >=24 surviving-row per-permno positional gate counted over post-SIC/ceq rows including NaN-Y rows."
+    },
+    {
+      "factor": "Price",
+      "verdict": "covered_by_existing_register_entry",
+      "mechanism": "Engine computes LOG(ABS(m_prc)) with m_prc = raw monthlyCRSP prc over the full grid; the script computes on SignalMasterTable rows only (shrcd 10/11/12 & exchcd 1/2/3). 12/12 sampled extras (e.g. permno 92058 2023-08, 17364 1982-12) are permno-months absent from SMT; missing=0 and joint values bit-identical.",
+      "action": "p1_universe_policy.json policy 'smt_strict' (already recorded, applied at emit time) \u2014 masks all 974,791 extras exactly."
+    },
+    {
+      "factor": "RD",
+      "verdict": "covered_by_existing_register_entry",
+      "mechanism": "10/10 sampled extras (e.g. permno 61778 1997-12, permno 90305 2020-02) are permno-months present in m_aCompustat and monthlyCRSP but absent from SignalMasterTable (shrcd 10/11/12 & exchcd 1/2/3 filter, plus RD.py L28's non-null-gvkey requirement). RD.py builds on SMT and inner-joins m_aCompustat, so the oracle has no row there; the engine computes DIV(xrd, m_mve) on the raw wide grid. Values on joint support are bit-identical; the 163,780 extras are pure universe cells.",
+      "action": "SMT universe masking family; resolved by p1_universe_policy.json policy RD=smt_strict (mask applied at emit time, measured to exact oracle parity)"
+    },
+    {
+      "factor": "SP",
+      "verdict": "covered_by_existing_register_entry",
+      "mechanism": "Identical to RD: 10/10 sampled extras (e.g. permno 88392 2019-12, permno 25267 1994-04) have mAC=True, CRSP=True, SMT=False. SP.py inner-merges deduped m_aCompustat with SignalMasterTable (L37), so the 281,519 extras are engine cells on the raw grid outside the SMT universe; joint-support values match exactly.",
+      "action": "SMT universe masking family; resolved by p1_universe_policy.json policy SP=smt_strict (mask applied at emit time, measured to exact oracle parity)"
+    },
+    {
+      "factor": "RDcap",
+      "verdict": "needs_support_fix",
+      "mechanism": "Native support is exactly 0 \u2014 the 537,801 'missing' cells are the ENTIRE oracle support. _op_size_filtered (p1_factor_engine.py:988) defaults min_tercile=2, and the RDcap spec (p1_factor_specs.py:894-908) passes only max_tercile=1, so the survival mask is (rank > 1/3) & (rank <= 1/3) = False everywhere and every cell is nulled. Sampled oracle cells (all SMT=True, mAC=True, at non-null, >48 months after first m_aCompustat month, tercile-1 size) confirm the oracle side is normal small-firm RDcap output. The 0-value-diff result is vacuous (empty joint support).",
+      "action": "DSL change in the RDcap spec: O(\"size_filtered\", ..., m_mve_c, min_tercile=None, max_tercile=1) \u2014 same spec fix the register records for std_turn ('min_tercile null so no implicit bottom-tercile exclusion'). After unblocking, expect a second residual: the tree's grid-wide FILLNA(xrd, 0) manufactures zero lags before each firm's first m_aCompustat month, where RDcap.py's fill_date_gaps+fillna(0) confines zeros to the permno's m_aCompustat [first,last] span (implicit 48-month calendar gate); the xrd source fill should be span-limited (span_fill semantics over the m_aCompustat coverage span, not grid-wide fillna), and tercile breakpoints should rank over the m_aCompustat-and-SMT-matched mve_c population, not all SMT stocks."
+    },
+    {
+      "factor": "ShareIss1Y",
+      "verdict": "needs_support_fix",
+      "mechanism": "Missing=0; the 1,088,956 extras split two ways. (a) 1,066,613 (97.9%) are at months outside SignalMasterTable (several sampled cells are not even in monthlyCRSP at t, e.g. permno 83150 2001-02 \u2014 the engine formula needs only the t-6/t-18 lags, so it emits at months where the script's SMT-inner-CRSP merge has no row). (b) 22,343 (2.1%) are in-SMT months where 2000/2000 sampled cells have t-6 or t-18 rows present in raw monthlyCRSP but ABSENT from SMT \u2014 ShareIss1Y.py's lag self-merge (L63-71) runs on the SMT-filtered merged panel, so those lags are NaN for the script but found by the engine's raw-CRSP wide panel. An emit-time SMT mask alone cannot fix (b), which is why p1_universe_policy.json records UNRESOLVED.",
+      "action": "DSL change: wrap output SMT_OUT(...) AND mask the lag source to SMT rows \u2014 ShareIss1Y = SMT_OUT(DIV(SUB(L6, L18), L18)) with Lk = O(\"time_lagged_value\", O(\"smt_only\", MUL(m_shrout, m_cfacshr)), months=k) for k=6,18"
+    },
+    {
+      "factor": "ShareIss5Y",
+      "verdict": "needs_support_fix",
+      "mechanism": "Same two-part mechanism as ShareIss1Y with 5/65-month offsets: of 719,410 extras, 677,864 (94.2%) are at non-SMT months (script universe = SMT inner-join monthlyCRSP, validate 1:1), and 41,546 (5.8%) are in-SMT months where 2000/2000 sampled have the t-5/t-65 lag rows in raw CRSP but not in SMT (script lags come from the SMT-filtered panel, ShareIss5Y.py L58-66). Missing=0 because the script's lag domain is a strict subset of the engine's.",
+      "action": "DSL change: ShareIss5Y = SMT_OUT(DIV(SUB(L5, L65), L65)) with Lk = O(\"time_lagged_value\", O(\"smt_only\", MUL(m_shrout, m_cfacshr)), months=k) for k=5,65"
+    },
+    {
+      "factor": "SurpriseRD",
+      "verdict": "covered_by_existing_register_entry",
+      "mechanism": "2000/2000 sampled missing cells have NO m_aCompustat row at calendar t-12 (0 cases of row-present-but-xrd-null): SurpriseRD.py L33-34 uses positional groupby(permno).shift(12) over the gappy deduped panel, so across coverage gaps it pairs xrd_t with an observation older than 12 calendar months and still emits a value; the engine's calendar t-12 lag is NaN there (condition6 fails) by design. Count 6,728 matches the register's '~6.7k firm-months where no true t-12 observation exists'.",
+      "action": "Register section 'SurpriseRD' in p1_deviation_register.md (calendar-vs-positional 12-month lag family)"
+    },
+    {
+      "factor": "TotalAccruals",
+      "verdict": "covered_by_existing_register_entry",
+      "mechanism": "Both residual sides match the register's three documented items. Missing (14,893 ~ register's '~14.9k'): 1988/2000 sampled cells lack an m_aCompustat row at calendar t-12 \u2014 script's positional shift(12) (L67-70) bridges gaps with stale rows; the small remainder is the registered at_lag12 inf/undefined subset (item 3, 108 inf cells the engine renders NaN). Extra (22,346 ~ register's '~22.3k'): 2000/2000 sampled cells are year>1989 rows where at least one of sstk/prstkc/dv is null in m_aCompustat \u2014 the script builds zero-filled temps (L53-55) but accidentally uses the RAW columns in the late branch (L88-92), NaN-ing the signal; the engine applies the documented zero-fill (register item 1) and correctly emits the value.",
+      "action": "Register section 'TotalAccruals' in p1_deviation_register.md (items 1-3: late-branch zero-fill translation bug, calendar-vs-positional lag, at_lag12==0 inf)"
+    },
+    {
+      "factor": "cfp",
+      "verdict": "needs_support_fix",
+      "mechanism": "Two independent defects in the engine spec ('cfp': DIV(oancf, m_mve), p1_factor_specs.py:609). Missing (689,150): 4000/4000 sampled cells are m_aCompustat rows with oancf NULL (mostly pre-1987) \u2014 cfp.py's accrual branch cfp=(ib - accrual_level)/mve_permco (L106-121, with the oancf override at L124-129) is entirely absent from the engine tree, so every accrual-branch cell is NaN natively. Extra (241,141): 0 of 241,141 extras are in SMT \u2014 the engine emits oancf/m_mve on the raw grid while the script's universe is SMT inner-merged with deduped m_aCompustat (L66-84). Joint-support values match because both sides compute the identical oancf branch there.",
+      "action": "DSL change: cfp = SMT_OUT(DIV(O(\"coalesce\", oancf, SUB(ib, accrual_level)), m_mve)) where accrual_level = SUB(SUB(DELTA(act,12), DELTA(che,12)), SUB(SUB(SUB(DELTA(lct,12), DELTA(dlc,12)), DELTA(txp,12)), dp)) \u2014 i.e. (\u0394act\u2212\u0394che) \u2212 (\u0394lct\u2212\u0394dlc\u2212\u0394txp\u2212dp) \u2014 with each lagged input drawn from O(\"smt_only\", x) before DELTA, because the script's calendar self-merge lags (L95-101) resolve only against rows that survived the SMT\u2229Compustat merge (raw-grid lags would manufacture accrual values at cells whose t-12 month is in m_aCompustat but not SMT)"
+    },
+    {
+      "factor": "fgr5yrLag",
+      "verdict": "needs_support_fix",
+      "mechanism": "_op_fgr5yr_lag_signal (p1_factor_engine.py:2659-2677) builds its IBES-permno link from IBESCRSPLinkingTable via _ibes_permno_month_map (dedup keep-first), while fgr5yrLag.py L47-51 inner-merges SignalMasterTable's tickerIBES column, embedding SMT membership. Extras (64,243 = 5,369 engine-only June anchors x 12-month expansion): 10/10 sampled anchor-June rows have NO SMT row at all for that permno-month (non-SMT universe, e.g. ADR tickers KOF1/SNP/HKT/GPP) but the link table + m_aCompustat + fpi=='0' IBES all have data. Missing (96 = 8 anchors x 12, permnos 77158/69796/88372): SMT carries a tickerIBES (KVPH, CDG2) that the engine's link map lacks at the anchor June or at the t-6 lag-source December. Rebuilding both pipelines and swapping only the map reproduces the oracle June-row set exactly: 96/96 missing and 64,243/64,243 extra cells predicted.",
+      "action": "Op-internal source fix (no SPAN_OUT/SMT_OUT wrap, no span_fill/smt_fill): in _op_fgr5yr_lag_signal replace the _ibes_permno_month_map(store) merge with an inner merge of SignalMasterTable[['permno','time_avail_m','tickerIBES']] (as the script does), so the SMT universe and SMT ticker link gate both the June observation and the calendar t-6 lag source. Verified to give exact support parity."
+    },
+    {
+      "factor": "hire",
+      "verdict": "needs_support_fix",
+      "mechanism": "_op_hire_growth (p1_factor_engine.py:1007-1010) ends with value.where(emp.notna() & lag.notna(), 0), which manufactures hire=0 over the ENTIRE month x permno grid; hire.py L48 zero-fills only on m_aCompustat rows and L51 drops year<1965. Sample of 300,000 of the 42.7M extras: 299,477 (99.83%) are grid cells with no m_aCompustat row at all (native value 0.0), 523 (0.17%) are genuine m_aCompustat rows pre-1965 that the script nulls (these include the only nonzero native values in the sample, ~10/5,000). missing=0 as expected. Verified exactly: native support masked to m_aCompustat row support (keep-first dedup) AND year>=1965 reproduces oracle support with 0 missing / 0 extra.",
+      "action": "Confine the zero-fill to m_aCompustat row support and add the year gate: output wrap = m_aCompustat_rows row-support mask (the 'm_aCompustat_rows' candidate mask of p1_validation._candidate_masks, added as an engine op; SPAN_OUT/SMT_OUT: none - the script never touches SMT/CRSP), then O('year_filtered', ..., min_year=1965). Concretely: keep .where(emp.notna() & lag.notna(), 0) in _op_hire_growth but mask the result to m_aCompustat row presence, and wrap the spec tree 'hire' in year_filtered(min_year=1965). Verified exact (0/0)."
+    },
+    {
+      "factor": "roaq",
+      "verdict": "needs_support_fix",
+      "mechanism": "Script universe is SignalMasterTable rows with non-null gvkey inner-joined to m_QCompustat (roaq.py L28, L37), with atq_lag3 looked up inside that merged panel (L44-50); the engine computes DIV(q_ib, LAG(q_at,3)) on the full grid with m_QCompustat mapped to permnos via m_aCompustat's gvkey map, with no SMT conditioning. Of 100,000 sampled extras: 99,415 are permno-months not in SMT at t (universe), 585 are in SMT at t but the script's merged panel has no (permno, t-3) row so its panel-lag is null even though raw quarterly atq exists at calendar t-3. missing=0. Verified: masking native support to SMT rows leaves 0 missing and exactly 1,917 extras (the lag-provenance cells; identical under smt_strict and SMT-gvkey-notna masks).",
+      "action": "Wrap the tree in SMT_OUT: 'roaq': SMT_OUT(DIV(q_ib, LAG(q_at, 3))) at p1_factor_specs.py:748 (equivalently adopt smt_strict at emit). Keep the full-history calendar t-3 lag and add a one-line register entry for the residual 1,917 engine-only cells, same family as the NumEarnIncrease entry: the script's SMT-merged panel-lag destroys real quarterly observations when the permno exits the universe at t-3; the engine uses the true calendar t-3 atq."
+    },
+    {
+      "factor": "sfe",
+      "verdict": "needs_support_fix",
+      "mechanism": "_op_sfe_signal (p1_factor_engine.py:2680-2706) takes the December (t-3) price from RAW monthlyCRSP joined through IBESCRSPLinkingTable pairs; sfe.py L43-47 requires the December SignalMasterTable row (shrcd/exchcd universe) and SMT's own tickerIBES. Rebuilding both pipelines: 6,903 engine-only March signal rows, ALL with the December row absent from SMT -> 78,232/78,232 extra cells predicted after the 12-month replication; and the inflated engine sample shifts the per-month pd.qcut(numest, q=2) median split, flipping 1,188 script-low-coverage rows to engine-high-coverage (plus 2 rows whose ticker-permno pair is absent from the link map) -> 14,280/14,280 missing cells predicted.",
+      "action": "Op-internal source fix (no output wrap change - the 12-month replication legitimately extends past delisting, matching the script): in _op_sfe_signal replace the IBESCRSPLinkingTable + raw monthlyCRSP merges with a single inner merge of SignalMasterTable[['permno','time_avail_m'->prc_time,'tickerIBES','prc']] on [tickerIBES, prc_time]; the qcut coverage split then computes on the script's sample, which simultaneously removes the 78,232 extras and restores the 14,280 missing cells."
+    },
+    {
+      "factor": "std_turn",
+      "verdict": "needs_support_fix",
+      "mechanism": "The support residual is NOT the register-documented calendar-vs-36-row-window deviation (0/2,000 sampled missing cells were window-gate cells). It is the size screen: p1_factor_specs.py:921 passes m_mve (mve_permco) into O('size_filtered', ..., max_quintile=3), and _op_size_filtered (engine:988-1004) defaults min_tercile=2 and uses pct-rank thresholds. Sampled missing (2,000): 1,725 bottom-size-tercile cells the engine's default min_tercile=2 excludes but the script keeps (quintiles 1-3), 225 engine-rank>0.6 vs oracle-qcut-quintile<=3 (mve_permco-vs-mve_c plus rank-vs-qcut breakpoints), 50 size-missing rows the engine masks but the script keeps (pl.when(null>=4) is falsy -> value retained). Sampled extras (2,000): 2,000/2,000 oracle qcut quintile>=4 on mve_c while engine rank(mve_permco)<=0.6. The register's std_turn entry claims these exact fixes ('size = shrout*|prc|', 'qcut-equivalent breakpoints', 'min_tercile null') were made - the golden native and current spec show they were never landed.",
+      "action": "Land the fix the register already describes: at p1_factor_specs.py:921 pass size = MUL(m_shrout, ABS(m_prc)) (mve_c, not m_mve) with min_tercile=None, max_quintile=3; and in _op_size_filtered use per-month pd.qcut-equivalent quintile breakpoints with KEEP-when-size-missing semantics instead of pct-rank + NaN-masks. No SPAN_OUT/SMT_OUT (script universe is raw monthlyCRSP; the engine's size mask already suppresses no-CRSP-row months - 0/2,000 extras were off-row). Residual after fix should shrink to the documented row-window-vs-calendar-window family only."
+    },
+    {
+      "factor": "tang",
+      "verdict": "covered_by_existing_register_entry",
+      "mechanism": "Engine screens manufacturing membership on sic_pit = coalesce(sich, sic) (point-in-time historical code, p1_factor_specs.py:461,754); the script (tang.py L35-38) uses the download-date header sic. Sampled 4,000 missing cells: 4,000/4,000 have header sic in [2000,3999] but historical sich outside it (e.g. permno 90238 2006-01 header 2080 vs sich 8731); sampled 4,000 extras: 4,000/4,000 have sich in-band but header out (e.g. permno 53453 1996-02 header 7372 vs sich 3590). Counts match the register-recorded footprint exactly (38,118 / 70,320).",
+      "action": "Register section 'B. GP, tang - point-in-time industry classification' (which records exactly these 38,118/70,320 support cells), reinforced by the 'tang [lookahead_confirmed]' entry; p1_universe_policy.json also resolves tang (policy 'none', applied at emit)."
+    }
+  ]
+}

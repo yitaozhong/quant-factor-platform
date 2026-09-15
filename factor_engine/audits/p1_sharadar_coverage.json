@@ -1,0 +1,797 @@
+{
+ "AM": [
+  "YES",
+  []
+ ],
+ "AOP": [
+  "NO \u2014 needs IBES analyst data",
+  []
+ ],
+ "AbnormalAccruals": [
+  "NO \u2014 Compustat items with no SF1 field: ['fopt', 'ppegt']",
+  [
+   "fopt",
+   "ppegt"
+  ]
+ ],
+ "Accruals": [
+  "NO \u2014 Compustat items with no SF1 field: ['txp']",
+  [
+   "txp"
+  ]
+ ],
+ "AccrualsBM": [
+  "NO \u2014 Compustat items with no SF1 field: ['txp']",
+  [
+   "txp"
+  ]
+ ],
+ "AdExp": [
+  "NO \u2014 Compustat items with no SF1 field: ['xad']",
+  [
+   "xad"
+  ]
+ ],
+ "AnalystRevision": [
+  "NO \u2014 needs IBES analyst data",
+  []
+ ],
+ "AnalystValue": [
+  "NO \u2014 needs IBES analyst data",
+  []
+ ],
+ "AnnouncementReturn": [
+  "YES",
+  []
+ ],
+ "AssetGrowth": [
+  "YES",
+  []
+ ],
+ "BM": [
+  "NO \u2014 Compustat items with no SF1 field: ['ceqt']",
+  [
+   "ceqt"
+  ]
+ ],
+ "BMdec": [
+  "NO \u2014 Compustat items with no SF1 field: ['pstk', 'pstkl', 'pstkrv']",
+  [
+   "pstk",
+   "pstkl",
+   "pstkrv"
+  ]
+ ],
+ "BPEBM": [
+  "NO \u2014 Compustat items with no SF1 field: ['dc', 'dvpa', 'tstkp']",
+  [
+   "dc",
+   "dvpa",
+   "tstkp"
+  ]
+ ],
+ "Beta": [
+  "YES",
+  []
+ ],
+ "BetaFP": [
+  "YES",
+  []
+ ],
+ "BetaLiquidityPS": [
+  "YES",
+  []
+ ],
+ "BetaTailRisk": [
+  "YES",
+  []
+ ],
+ "BookLeverage": [
+  "NO \u2014 Compustat items with no SF1 field: ['pstk', 'pstkl', 'pstkrv']",
+  [
+   "pstk",
+   "pstkl",
+   "pstkrv"
+  ]
+ ],
+ "BrandInvest": [
+  "NO \u2014 Compustat items with no SF1 field: ['xad', 'xad0']",
+  [
+   "xad",
+   "xad0"
+  ]
+ ],
+ "CBOperProf": [
+  "NO \u2014 Compustat items with no SF1 field: ['drc', 'xacc', 'xpp']",
+  [
+   "drc",
+   "xacc",
+   "xpp"
+  ]
+ ],
+ "CF": [
+  "YES",
+  []
+ ],
+ "Cash": [
+  "YES",
+  []
+ ],
+ "CashProd": [
+  "YES",
+  []
+ ],
+ "ChAssetTurnover": [
+  "NO \u2014 Compustat items with no SF1 field: ['aco', 'lco', 'lo']",
+  [
+   "aco",
+   "lco",
+   "lo"
+  ]
+ ],
+ "ChEQ": [
+  "YES",
+  []
+ ],
+ "ChForecastAccrual": [
+  "NO \u2014 needs IBES analyst data",
+  []
+ ],
+ "ChInv": [
+  "YES",
+  []
+ ],
+ "ChInvIA": [
+  "YES",
+  []
+ ],
+ "ChNNCOA": [
+  "YES",
+  []
+ ],
+ "ChNWC": [
+  "YES",
+  []
+ ],
+ "ChTax": [
+  "YES",
+  []
+ ],
+ "ChangeInRecommendation": [
+  "NO \u2014 needs IBES analyst data",
+  []
+ ],
+ "CompEquIss": [
+  "YES",
+  []
+ ],
+ "CompositeDebtIssuance": [
+  "YES",
+  []
+ ],
+ "ConsRecomm": [
+  "NO \u2014 needs IBES analyst data",
+  []
+ ],
+ "ConvDebt": [
+  "NO \u2014 Compustat items with no SF1 field: ['cshrc', 'dc']",
+  [
+   "cshrc",
+   "dc"
+  ]
+ ],
+ "CoskewACX": [
+  "YES",
+  []
+ ],
+ "Coskewness": [
+  "YES",
+  []
+ ],
+ "DebtIssuance": [
+  "YES",
+  []
+ ],
+ "DelCOA": [
+  "YES",
+  []
+ ],
+ "DelCOL": [
+  "YES",
+  []
+ ],
+ "DelDRC": [
+  "NO \u2014 Compustat items with no SF1 field: ['drc']",
+  [
+   "drc"
+  ]
+ ],
+ "DelEqu": [
+  "YES",
+  []
+ ],
+ "DelFINL": [
+  "NO \u2014 Compustat items with no SF1 field: ['pstk']",
+  [
+   "pstk"
+  ]
+ ],
+ "DelLTI": [
+  "YES",
+  []
+ ],
+ "DelNetFin": [
+  "NO \u2014 Compustat items with no SF1 field: ['pstk']",
+  [
+   "pstk"
+  ]
+ ],
+ "DivInit": [
+  "PARTIAL \u2014 CRSP distribution codes \u2192 re-derive from ACTIONS",
+  []
+ ],
+ "DivOmit": [
+  "PARTIAL \u2014 CRSP distribution codes \u2192 re-derive from ACTIONS",
+  []
+ ],
+ "DivSeason": [
+  "PARTIAL \u2014 CRSP distribution codes \u2192 re-derive from ACTIONS",
+  []
+ ],
+ "DivYieldST": [
+  "PARTIAL \u2014 CRSP distribution codes \u2192 re-derive from ACTIONS",
+  []
+ ],
+ "DolVol": [
+  "YES",
+  []
+ ],
+ "DownRecomm": [
+  "NO \u2014 needs IBES analyst data",
+  []
+ ],
+ "EBM": [
+  "NO \u2014 Compustat items with no SF1 field: ['dc', 'dvpa', 'tstkp']",
+  [
+   "dc",
+   "dvpa",
+   "tstkp"
+  ]
+ ],
+ "EP": [
+  "YES",
+  []
+ ],
+ "EarnSupBig": [
+  "YES",
+  []
+ ],
+ "EarningsConsistency": [
+  "YES",
+  []
+ ],
+ "EarningsForecastDisparity": [
+  "NO \u2014 needs IBES analyst data",
+  []
+ ],
+ "EarningsStreak": [
+  "NO \u2014 needs IBES analyst data",
+  []
+ ],
+ "EarningsSurprise": [
+  "YES",
+  []
+ ],
+ "EntMult": [
+  "NO \u2014 Compustat items with no SF1 field: ['dc']",
+  [
+   "dc"
+  ]
+ ],
+ "EquityDuration": [
+  "YES",
+  []
+ ],
+ "ExchSwitch": [
+  "YES",
+  []
+ ],
+ "ExclExp": [
+  "NO \u2014 needs IBES analyst data",
+  []
+ ],
+ "FEPS": [
+  "NO \u2014 needs IBES analyst data",
+  []
+ ],
+ "FirmAge": [
+  "YES",
+  []
+ ],
+ "FirmAgeMom": [
+  "YES",
+  []
+ ],
+ "ForecastDispersion": [
+  "NO \u2014 needs IBES analyst data",
+  []
+ ],
+ "Frontier": [
+  "NO \u2014 Compustat items with no SF1 field: ['xad']",
+  [
+   "xad"
+  ]
+ ],
+ "GP": [
+  "YES",
+  []
+ ],
+ "GrAdExp": [
+  "NO \u2014 Compustat items with no SF1 field: ['xad']",
+  [
+   "xad"
+  ]
+ ],
+ "GrLTNOA": [
+  "NO \u2014 Compustat items with no SF1 field: ['aco', 'ao', 'lco', 'lo']",
+  [
+   "aco",
+   "ao",
+   "lco",
+   "lo"
+  ]
+ ],
+ "GrSaleToGrInv": [
+  "YES",
+  []
+ ],
+ "GrSaleToGrOverhead": [
+  "YES",
+  []
+ ],
+ "Herf": [
+  "YES",
+  []
+ ],
+ "HerfAsset": [
+  "YES",
+  []
+ ],
+ "HerfBE": [
+  "NO \u2014 Compustat items with no SF1 field: ['pstk', 'pstkl', 'pstkrv']",
+  [
+   "pstk",
+   "pstkl",
+   "pstkrv"
+  ]
+ ],
+ "High52": [
+  "YES",
+  []
+ ],
+ "IdioVol3F": [
+  "YES",
+  []
+ ],
+ "IdioVolAHT": [
+  "YES",
+  []
+ ],
+ "Illiquidity": [
+  "YES",
+  []
+ ],
+ "IndMom": [
+  "YES",
+  []
+ ],
+ "IndRetBig": [
+  "YES",
+  []
+ ],
+ "IntMom": [
+  "YES",
+  []
+ ],
+ "IntanBM": [
+  "YES",
+  []
+ ],
+ "IntanCFP": [
+  "YES",
+  []
+ ],
+ "IntanEP": [
+  "YES",
+  []
+ ],
+ "IntanSP": [
+  "YES",
+  []
+ ],
+ "InvestPPEInv": [
+  "NO \u2014 Compustat items with no SF1 field: ['ppegt']",
+  [
+   "ppegt"
+  ]
+ ],
+ "Investment": [
+  "YES",
+  []
+ ],
+ "LRreversal": [
+  "YES",
+  []
+ ],
+ "Leverage": [
+  "YES",
+  []
+ ],
+ "MRreversal": [
+  "YES",
+  []
+ ],
+ "MS": [
+  "NO \u2014 Compustat items with no SF1 field: ['fopt', 'xad']",
+  [
+   "fopt",
+   "xad"
+  ]
+ ],
+ "MaxRet": [
+  "YES",
+  []
+ ],
+ "MeanRankRevGrowth": [
+  "YES",
+  []
+ ],
+ "Mom12m": [
+  "YES",
+  []
+ ],
+ "Mom12mOffSeason": [
+  "YES",
+  []
+ ],
+ "Mom6m": [
+  "YES",
+  []
+ ],
+ "MomOffSeason": [
+  "YES",
+  []
+ ],
+ "MomOffSeason06YrPlus": [
+  "YES",
+  []
+ ],
+ "MomOffSeason11YrPlus": [
+  "YES",
+  []
+ ],
+ "MomOffSeason16YrPlus": [
+  "YES",
+  []
+ ],
+ "MomRev": [
+  "YES",
+  []
+ ],
+ "MomSeason": [
+  "YES",
+  []
+ ],
+ "MomSeason06YrPlus": [
+  "YES",
+  []
+ ],
+ "MomSeason11YrPlus": [
+  "YES",
+  []
+ ],
+ "MomSeason16YrPlus": [
+  "YES",
+  []
+ ],
+ "MomSeasonShort": [
+  "YES",
+  []
+ ],
+ "MomVol": [
+  "YES",
+  []
+ ],
+ "NOA": [
+  "NO \u2014 Compustat items with no SF1 field: ['dc', 'mib']",
+  [
+   "dc",
+   "mib"
+  ]
+ ],
+ "NetDebtFinance": [
+  "NO \u2014 Compustat items with no SF1 field: ['dlcch']",
+  [
+   "dlcch"
+  ]
+ ],
+ "NetDebtPrice": [
+  "NO \u2014 Compustat items with no SF1 field: ['dvpa', 'pstk', 'tstkp']",
+  [
+   "dvpa",
+   "pstk",
+   "tstkp"
+  ]
+ ],
+ "NetEquityFinance": [
+  "YES",
+  []
+ ],
+ "NetPayoutYield": [
+  "YES",
+  []
+ ],
+ "NumEarnIncrease": [
+  "YES",
+  []
+ ],
+ "OPLeverage": [
+  "YES",
+  []
+ ],
+ "OperProf": [
+  "YES",
+  []
+ ],
+ "OperProfRD": [
+  "YES",
+  []
+ ],
+ "OrderBacklog": [
+  "NO \u2014 Compustat items with no SF1 field: ['ob']",
+  [
+   "ob"
+  ]
+ ],
+ "OrderBacklogChg": [
+  "NO \u2014 Compustat items with no SF1 field: ['ob']",
+  [
+   "ob"
+  ]
+ ],
+ "PS": [
+  "NO \u2014 Compustat items with no SF1 field: ['fopt']",
+  [
+   "fopt"
+  ]
+ ],
+ "PayoutYield": [
+  "NO \u2014 Compustat items with no SF1 field: ['pstkrv']",
+  [
+   "pstkrv"
+  ]
+ ],
+ "PctAcc": [
+  "NO \u2014 Compustat items with no SF1 field: ['txp']",
+  [
+   "txp"
+  ]
+ ],
+ "PctTotAcc": [
+  "NO \u2014 Compustat items with no SF1 field: ['prstkcc']",
+  [
+   "prstkcc"
+  ]
+ ],
+ "PredictedFE": [
+  "NO \u2014 needs IBES analyst data",
+  []
+ ],
+ "Price": [
+  "YES",
+  []
+ ],
+ "PriceDelayRsq": [
+  "YES",
+  []
+ ],
+ "PriceDelaySlope": [
+  "YES",
+  []
+ ],
+ "PriceDelayTstat": [
+  "YES",
+  []
+ ],
+ "RD": [
+  "YES",
+  []
+ ],
+ "RDAbility": [
+  "YES",
+  []
+ ],
+ "RDcap": [
+  "YES",
+  []
+ ],
+ "REV6": [
+  "NO \u2014 needs IBES analyst data",
+  []
+ ],
+ "RealizedVol": [
+  "YES",
+  []
+ ],
+ "ResidualMomentum": [
+  "YES",
+  []
+ ],
+ "ReturnSkew": [
+  "YES",
+  []
+ ],
+ "ReturnSkew3F": [
+  "YES",
+  []
+ ],
+ "RevenueSurprise": [
+  "YES",
+  []
+ ],
+ "RoE": [
+  "YES",
+  []
+ ],
+ "SP": [
+  "YES",
+  []
+ ],
+ "STreversal": [
+  "YES",
+  []
+ ],
+ "ShareIss1Y": [
+  "YES",
+  []
+ ],
+ "ShareIss5Y": [
+  "YES",
+  []
+ ],
+ "ShareRepurchase": [
+  "YES",
+  []
+ ],
+ "ShareVol": [
+  "YES",
+  []
+ ],
+ "Size": [
+  "YES",
+  []
+ ],
+ "SurpriseRD": [
+  "YES",
+  []
+ ],
+ "Tax": [
+  "NO \u2014 Compustat items with no SF1 field: ['txdi', 'txfed', 'txfo']",
+  [
+   "txdi",
+   "txfed",
+   "txfo"
+  ]
+ ],
+ "TotalAccruals": [
+  "NO \u2014 Compustat items with no SF1 field: ['pstk']",
+  [
+   "pstk"
+  ]
+ ],
+ "TrendFactor": [
+  "YES",
+  []
+ ],
+ "UpRecomm": [
+  "NO \u2014 needs IBES analyst data",
+  []
+ ],
+ "VarCF": [
+  "YES",
+  []
+ ],
+ "VolMkt": [
+  "YES",
+  []
+ ],
+ "VolSD": [
+  "YES",
+  []
+ ],
+ "VolumeTrend": [
+  "YES",
+  []
+ ],
+ "XFIN": [
+  "NO \u2014 Compustat items with no SF1 field: ['dlcch']",
+  [
+   "dlcch"
+  ]
+ ],
+ "cfp": [
+  "NO \u2014 Compustat items with no SF1 field: ['txp']",
+  [
+   "txp"
+  ]
+ ],
+ "dNoa": [
+  "NO \u2014 Compustat items with no SF1 field: ['mib', 'pstk']",
+  [
+   "mib",
+   "pstk"
+  ]
+ ],
+ "fgr5yrLag": [
+  "NO \u2014 needs IBES analyst data",
+  []
+ ],
+ "grcapx": [
+  "YES",
+  []
+ ],
+ "grcapx3y": [
+  "YES",
+  []
+ ],
+ "hire": [
+  "NO \u2014 Compustat items with no SF1 field: ['emp']",
+  [
+   "emp"
+  ]
+ ],
+ "realestate": [
+  "NO \u2014 Compustat items with no SF1 field: ['fatb', 'fatl', 'ppegt', 'ppenb', 'ppenls']",
+  [
+   "fatb",
+   "fatl",
+   "ppegt",
+   "ppenb",
+   "ppenls"
+  ]
+ ],
+ "roaq": [
+  "YES",
+  []
+ ],
+ "sfe": [
+  "NO \u2014 needs IBES analyst data",
+  []
+ ],
+ "std_turn": [
+  "YES",
+  []
+ ],
+ "tang": [
+  "NO \u2014 Compustat items with no SF1 field: ['ppegt']",
+  [
+   "ppegt"
+  ]
+ ],
+ "zerotrade12M": [
+  "YES",
+  []
+ ],
+ "zerotrade1M": [
+  "YES",
+  []
+ ],
+ "zerotrade6M": [
+  "YES",
+  []
+ ],
+ "ChNAnalyst": [
+  "NO \u2014 needs IBES analyst data",
+  []
+ ]
+}

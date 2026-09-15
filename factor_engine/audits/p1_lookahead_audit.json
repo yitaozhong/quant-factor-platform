@@ -1,0 +1,1035 @@
+{
+  "_meta": {
+    "generated": "2026-07-24",
+    "source": "16-agent point-in-time audit: input availability timing traced in both OSAP scripts and engine trees",
+    "principle": "no information may be used before its public availability month"
+  },
+  "factors": [
+    {
+      "factor": "AM",
+      "verdict": "clean",
+      "input_timing": "at: from m_aCompustat, stamped time_avail_m = datadate + 6 months (CompustatAnnual.py:212-215), i.e. public well before use. mve_permco: monthlyCRSP end-of-month t market equity, available at end of month t. Script AM.py merges both at the same time_avail_m; engine expression div(at, mve_permco) aligns the same panels at t.",
+      "mechanism": "Both sides combine a >=6-month-lagged accounting level with end-of-month-t market equity at stamp t; no forward-dated field is touched."
+    },
+    {
+      "factor": "AOP",
+      "verdict": "clean",
+      "input_timing": "feps1/feps2: IBES fpi=1/2 mean estimates with statpers in May (public mid-May), shifted +1 month and used at June stamps (script lines 50-79, engine p1_factor_engine.py:1345-1356). LTG: fpi=0 statpers-June summary (public mid-June) used at June. prc/shrout: end-of-June CRSP. ceq/ibcom/sale/dvc/at: m_aCompustat at June with 6-month lag, and the screen datadate.month>=6 forces fiscal year-ends Jun-Dec of the prior year. sale t-60 lag is backward. June value held forward 0..11 months.",
+      "mechanism": "AOP = (AnalystValue - IntrinsicValue)/|IntrinsicValue| built entirely from May forecasts, mid-June LTG, end-of-June prices, and >=6-month-lagged fundamentals; the 12-month expansion only pushes values FORWARD in time. Identical logic in ZZ1 script and _prepare_analyst_value_signals."
+    },
+    {
+      "factor": "AbnormalAccruals",
+      "verdict": "lookahead_confirmed",
+      "input_timing": "Fundamentals (act, che, lct, dlc, at, ib, sale, ppegt, oancf/fopt, ni, sic) from a_aCompustat stamped time_avail_m = datadate + 6 months. A Compustat fyear y pools datadates from Jun-y through May-(y+1), so stamps within one fyear group span Dec-y through Nov-(y+1). The residual for the earliest-stamped firm (Dec-y) is computed from a regression whose inputs include peers whose fundamentals only become available up to Nov-(y+1) \u2014 up to 11 months after the stamp.",
+      "mechanism": "BOTH sides leak. Script ZZ2_AbnormalAccruals_AbnormalAccrualsPercent.py: winsor2 trim by=['fyear'] (line 138) and OLS residuals .over(['fyear','sic2']) (lines 151-163) pool the full fiscal-year cross-section, so a firm's residual stamped at its own datadate+6 depends on regression coefficients and trim cutoffs estimated from peers' statements published up to ~11 months later. Engine p1_factor_engine.py: _trim_by_group(..., 'fyear', 0.001, 0.999) (line 1690) and _ols_residuals_by_groups(group_cols=['fyear','sic2']) (lines 1692-1698) reproduce the same contemporaneous-fyear pooling, then _expand_hold_months holds the contaminated value 12 more months. (This mirrors Xie 2001's in-sample cross-sectional estimation, but it is a genuine availability violation at the stamped month.)"
+    },
+    {
+      "factor": "Accruals",
+      "verdict": "clean",
+      "input_timing": "act, che, lct, dlc, txp, at, dp all from m_aCompustat at t (datadate + 6-month lag) and their 12-month-lagged panel values (shift(12) on a gap-free monthly panel in both script Accruals.py:77-99 and engine delta/lag ops on the full month-start template index, p1_factor_engine.py:671,704-714).",
+      "mechanism": "Only current-stamp (already 6-month-lagged) and t-12 values enter; shifts are strictly backward. Non-timing note: the engine expression omits the script's '- dp' (depreciation) term in the numerator \u2014 a fidelity discrepancy vs Sloan/OSAP, but no look-ahead."
+    },
+    {
+      "factor": "AccrualsBM",
+      "verdict": "clean",
+      "input_timing": "ceq, act, che, lct, dlc, txp, at from m_aCompustat at t (datadate + 6-month lag) plus t-12 lags; mve_permco end-of-month t. Quintile ranks (fastxtile by time_avail_m in script; _row_bucket per-row in engine, p1_factor_engine.py:938-942,1057-1063) are same-month cross-sections.",
+      "mechanism": "The binary signal compares month-t cross-sectional ranks of quantities that are all publicly available by end of t; ranking within the same month uses no forward information."
+    },
+    {
+      "factor": "AdExp",
+      "verdict": "clean",
+      "input_timing": "xad: m_aCompustat at t (datadate + 6-month lag). mve_permco: end-of-month t. Script AdExp.py and engine positive_only(div(xad, mve_permco)) are contemporaneous merges at t.",
+      "mechanism": "Single lagged accounting field over current market equity; the positivity screen is applied on the same-stamp value only."
+    },
+    {
+      "factor": "AnalystRevision",
+      "verdict": "clean",
+      "input_timing": "meanest: IBES summary stamped by statpers month (statpers falls mid-month, so the month-t value is public before end of t; IBESEPSUnadjusted.py:47-67 keeps the latest statpers per ticker-fpi-month). Signal = meanest(t)/meanest(t-1) via shift(1) in the script and lag(...,1) on the full monthly template in the engine.",
+      "mechanism": "Ratio of the month-t summary forecast to the month-(t-1) summary forecast \u2014 both issued on or before their stamp months. Non-timing note: the engine's var loader (p1_factor_engine.py:416-431) does not filter fpi, and pivot aggfunc='last' on the fpi-sorted raw file effectively picks the fpi='6' (current-quarter) row rather than the script's fpi='1' FY1 forecast \u2014 a fidelity bug, not a leak, since all fpi rows share the same statpers stamp."
+    },
+    {
+      "factor": "AnalystValue",
+      "verdict": "clean",
+      "input_timing": "Same inputs as AOP: May-statpers FY1/FY2 forecasts used at June (+1-month conservative shift), mid-June LTG at June, end-of-June prc/shrout, m_aCompustat fundamentals at June with 6-month lag and datadate-month>=6 screen, sale t-60. June value expanded forward 12 months (script ZZ1 lines 449-461; engine _prepare_analyst_value_signals lines 1450-1456).",
+      "mechanism": "Three-stage residual-income valuation from forecasts issued before or during the stamp month and lagged fundamentals; the annual-to-monthly expansion only carries values into later months."
+    },
+    {
+      "factor": "AnnouncementReturn",
+      "verdict": "clean",
+      "input_timing": "Engine runs the script (_can_execute_natively('AnnouncementReturn') = False; the announcement_return op has no native implementation), so only ZZ2_AnnouncementReturn.py matters. rdq: actual earnings announcement date from m_QCompustat. dailyCRSP ret and dailyFF mktrf/rf: available same day. CAR window is [ann-2, ann+1] business days; the value is stamped at the month of the window's LAST day (agg time_d 'max', line 121-128), then forward-filled up to 6 months.",
+      "mechanism": "Stamping at the month containing ann+1 guarantees every return in the window is realized by end of the stamp month (a month-end announcement whose +1 day spills into t+1 gets stamped at t+1); the 6-month fill only propagates past values forward. CCM link rows are restricted to their validity window."
+    },
+    {
+      "factor": "AssetGrowth",
+      "verdict": "clean",
+      "input_timing": "at: m_aCompustat at t (datadate + 6-month lag) and its 12-month lag (shift(12) within permno in the script; lag(at,12) on the gap-free month-start template in the engine).",
+      "mechanism": "(at_t - at_{t-12})/at_{t-12} with both operands at or before the stamp; strictly backward shifts on both sides."
+    },
+    {
+      "factor": "BM",
+      "verdict": "clean",
+      "input_timing": "ceqt: m_aCompustat at t (datadate + 6-month lag). Market equity: script BM.py takes mve_permco from the month 6 stamps back only when that month equals the datadate month, then forward-fills (lines 51-62) \u2014 i.e. ME frozen at the fiscal-year-end month, always in the past; engine op market_equity_matched_to_datadate is simply lag(mve_permco, 6) (p1_factor_engine.py:762-766).",
+      "mechanism": "Both denominators are market equity from >=6 months before the stamp (script: exact datadate-month ME held forward; engine: rolling t-6 ME). All inputs strictly historical; the engine's rolling approximation differs in vintage but never reaches past month t."
+    },
+    {
+      "factor": "BMdec",
+      "verdict": "clean",
+      "input_timing": "Book equity (seq/ceq+PS/at-lt + txditc - PS): m_aCompustat at t (datadate + 6-month lag). December ME: computed from end-of-December prc*shrout and assigned to all months of that calendar year (script tempDecME transform, lines 78-82; engine groupby(year).transform('min'), lines 2028-2029) \u2014 which nominally places Dec-y ME on Jan-Nov-y rows \u2014 but it is only ever READ through 12-month (months>=6) or 17-month (months<6) lags (script lines 113-162; engine shift(12)/shift(17), lines 2037-2039).",
+      "mechanism": "Although Dec ME is stored on pre-December rows, every access path lags >=12 months, so a stamp in Jun-Dec of year y uses Dec-(y-1) ME and a stamp in Jan-May uses Dec-(y-2) ME \u2014 both from completed Decembers well before the stamp month. Book equity carries the standard 6-month reporting lag. No forward access on either side."
+    },
+    {
+      "factor": "BPEBM",
+      "verdict": "clean",
+      "input_timing": "che/dltt/dlc/dc/dvpa/tstkp/ceq from m_aCompustat at t (public since datadate+6, datadate<=t-6); mve_permco from SignalMasterTable/monthlyCRSP at t (end-of-month t market cap, public at end of t). Engine (native) uses identical tree with monthlyCRSP mve_permco.",
+      "mechanism": "All accounting inputs carry the embedded 6-month reporting lag and market equity is used contemporaneously at month-end t; no lags cross forward on either side (script ZZ1_EBM_BPEBM.py joins on same time_avail_m; engine aligns panels on each dataset's own time_avail_m)."
+    },
+    {
+      "factor": "Beta",
+      "verdict": "clean",
+      "input_timing": "monthlyCRSP ret at months t-59..t (each public at its own month-end); monthlyFF rf and monthlyMarket ewretd at the same months. Value stamped at t uses window ending at t.",
+      "mechanism": "polars-ols rolling_ols is a trailing 60-obs window ending at the stamped row (Beta.py lines 93-105); month-t return is realized by end of month t. Engine side is script-backed (rolling_beta is a delegated operator), so engine timing = script timing. Note: the unexecuted spec tree uses vwretd vs the script's ewretd \u2014 a formula mismatch, not a timing leak."
+    },
+    {
+      "factor": "BetaFP",
+      "verdict": "clean",
+      "input_timing": "dailyCRSP ret and dailyFF rf/mktrf at daily dates up to the last trading day of month t; 252-day vol and 1260-day R2 windows are trailing; monthly value = last daily BetaFP within month t, stamped at t.",
+      "mechanism": "All rolling_std/rolling_mean and shift(1)/shift(2) constructions in ZZ2_BetaFP.py are backward-looking, and the month-t stamp aggregates only daily observations dated inside month t (lines 147-158). Engine is script-backed, so identical."
+    },
+    {
+      "factor": "BetaLiquidityPS",
+      "verdict": "suspect",
+      "input_timing": "monthlyCRSP ret and monthlyFF rf/mktrf/hml/smb at months t-59..t (public at their own month-ends); ps_innov from WRDS ff.liq_ps at the same months \u2014 but the ps_innov value for month tau is constructed by Pastor-Stambaugh from a liquidity-innovation regression whose coefficients are estimated on the full published sample, and the series is only released/extended periodically, so the number used for month tau was not publicly observable at end of month tau.",
+      "mechanism": "Leak is in the input series, identical on both sides (engine is script-backed): LiquidityFactor.py stamps ff.liq_ps rows at their own month with no real-time vintage, and BetaLiquidityPS.py's trailing 60-month regression (lines 86-99, itself correctly backward-looking) consumes ps_innov values whose construction embeds full-sample (post-tau) information. This is the standard series used in the literature, but under a strict point-in-time criterion historical ps_innov values are revised ex post. Script's own alignment logic contains no other leak. Side note: the unexecuted engine spec declares window 36/min 12 vs the script's 60/36 \u2014 a parameter mismatch, not a leak."
+    },
+    {
+      "factor": "BetaTailRisk",
+      "verdict": "clean",
+      "input_timing": "Tail factor for month tau built from dailyCRSP returns dated within tau (cross-sectional 5th percentile and tail exceedances, BetaTailRisk.py lines 43-81) \u2014 fully known at end of tau; monthlyCRSP ret at months t-119..t; beta stamped at t from trailing 120-month window.",
+      "mechanism": "The monthly tail-risk factor uses only same-month daily data and the rolling_ols window is trailing (lines 127-137); shrcd filter uses month-t CRSP names data. Engine is script-backed, so identical."
+    },
+    {
+      "factor": "BookLeverage",
+      "verdict": "clean",
+      "input_timing": "at/lt/txditc/pstk/pstkrv/pstkl/seq/ceq all from m_aCompustat at t (public since datadate+6). Engine (native) uses only at and ceq from the same panel at t.",
+      "mechanism": "Single-date accounting ratio with the 6-month availability lag baked into m_aCompustat; no lags, no market data, no self-joins on either side. (Engine formula log(at/ceq) omits the script's seq/txditc/preferred-stock fallbacks \u2014 a fidelity gap, not a timing leak.)"
+    },
+    {
+      "factor": "BrandInvest",
+      "verdict": "clean",
+      "input_timing": "xad/xad0/at/sic from a_aCompustat by fiscal year (each row public at datadate+6); BrandCapital recursion for FY Y uses xad of FY<=Y; BrandInvest = xad0(FY Y)/BrandCapital(FY Y-1); December-FYE rows expanded to months datadate+6 .. datadate+17.",
+      "mechanism": "Both script (BrandInvest.py lines 97-126, 149-165) and native engine op (_op_brand_invest_signal, p1_factor_engine.py lines 1548-1600) use shift(1)/prior-row recursion over fiscal years sorted ascending, and the keep-last-datadate dedup after monthly expansion only ever selects a datadate that is >=6 months before the stamped month \u2014 a newer fiscal year replaces an older one exactly when its own datadate+6 arrives."
+    },
+    {
+      "factor": "CBOperProf",
+      "verdict": "clean",
+      "input_timing": "revt/cogs/xsga/xrd and working-capital items from m_aCompustat at t (public since datadate+6) and their calendar 12-month lags at t-12 (public since t-12); mve_permco/mve_c and ceq for the BM exclusion filter at t (month-end t); sicCRSP/shrcd at t.",
+      "mechanism": "The l12 self-join in CBOperProf.py (lines 95-105) merges lag_time = t-12 months onto t, i.e. aligns t with t-12 (past), never t+k; exclusion filters use only end-of-month-t information. Engine-native tree uses only same-month revt/cogs/xsga/at/sic (no accrual-change terms \u2014 formula fidelity gap vs the script, but no future data)."
+    },
+    {
+      "factor": "CF",
+      "verdict": "clean",
+      "input_timing": "ib and dp from m_aCompustat at t (public since datadate+6); mve_permco at t (end-of-month t). Engine native tree identical (monthlyCRSP mve_permco).",
+      "mechanism": "Contemporaneous join of 6-month-lagged annual accounting data with month-end market equity on both sides; no lag or dedup pattern that could pick future rows."
+    },
+    {
+      "factor": "Cash",
+      "verdict": "clean",
+      "input_timing": "cheq/atq from m_QCompustat. Script (Cash.py) re-stamps availability at the rdq month and carries it 3 months, keeping the newest rdq<=t per month \u2014 the announcement date rdq falls inside the stamped month t, so the data is public by end of month t (the audit's availability standard). Engine (native) uses m_QCompustat's own time_avail_m = max(datadate+3mo, rdq month), with >6-month-late filings dropped \u2014 same or more conservative.",
+      "mechanism": "Both sides stamp at or after the announcement month and the keep-newest-rdq dedup only selects announcements dated <=t. Caveat, not a leak under the stated convention: because the stamp is the rdq month (announcement can be mid/late month), the value is only safe for portfolios formed at month-end t or later \u2014 consistent with the repo's t -> t+1 usage; it would leak only if consumed intramonth before rdq day."
+    },
+    {
+      "factor": "CashProd",
+      "verdict": "clean",
+      "input_timing": "at and che from m_aCompustat at t (public since datadate+6); mve_permco at t (end-of-month t). Engine native tree identical.",
+      "mechanism": "Contemporaneous same-month join of lagged accounting data and month-end market cap on both sides; no lags or self-joins."
+    },
+    {
+      "factor": "ChAssetTurnover",
+      "verdict": "clean",
+      "input_timing": "rect/invt/aco/ppent/intan/ap/lco/lo/sale from m_aCompustat at t (FY Y, public since datadate+6) and at t-12 (FY Y-1) via calendar-based lag; ChAssetTurnover = ATO(t) - ATO(t-12).",
+      "mechanism": "Script (ChAssetTurnover.py lines 65-91) builds lags by merging lag_time = t-12 onto t (past-only), and ppent ffill propagates only prior months forward; engine uses lag(...,12)/delta(...,12) implemented as shift(12) on a continuous month-start index (p1_factor_engine.py lines 704-714, 671), which is strictly backward. Verified the const args are n=12 on both lag and delta nodes."
+    },
+    {
+      "factor": "ChEQ",
+      "verdict": "clean",
+      "input_timing": "ceq from m_aCompustat: public ~datadate+6mo (annual report lag), stamped time_avail_m=datadate+6 and used at t and t-12. Script lag is positional shift(12) over unique permno-month rows (>=12 calendar months back); engine lag is calendar shift(12) on a contiguous monthly panel.",
+      "mechanism": "Clean: both sides use only 6-month-lagged annual data at t and a >=12-month lag; positional shift on unique-month rows can only reach further back, never forward. (Non-timing note: engine computes ceq/l12-1 without the script's ceq>0 & l12>0 filter \u2014 fidelity, not lookahead.)"
+    },
+    {
+      "factor": "ChForecastAccrual",
+      "verdict": "clean",
+      "input_timing": "meanest (IBES fpi=1 summary): computed at statpers (mid-month t), public before end of t, stamped month(statpers); prior estimate via shift(1) reaches the previous available month <= t-1. Accrual inputs (act,che,lct,dlc,txp,at) from m_aCompustat: public datadate+6, used at t vs exact calendar t-12 (script create_calendar_lag; engine _op_chforecast_accrual_signal lines 2386-2422 uses shift(12) over unique permno-month rows).",
+      "mechanism": "Clean: forecast revision compares month t summary to an earlier month's summary; the accrual median split (groupby time_avail_m qcut) is a same-month cross-section of values all public by end of t. No future-stamped input on either side."
+    },
+    {
+      "factor": "ChInv",
+      "verdict": "clean",
+      "input_timing": "invt, at from m_aCompustat: public datadate+6mo, stamped accordingly; used at t and t-12 (script positional shift(12) over unique monthly rows; engine calendar delta/lag 12 on contiguous panel).",
+      "mechanism": "Clean: pure 12-month change in 6-month-lagged annual data; lags can only fetch equal-or-older vintages (dedup in CompustatAnnual.py keeps latest datadate whose availability start is still <= t)."
+    },
+    {
+      "factor": "ChInvIA",
+      "verdict": "clean",
+      "input_timing": "capx, ppent, at from m_aCompustat: public datadate+6mo, used at t, t-12, t-24 via exact calendar-merge lags (script) / calendar shifts (engine). sicCRSP: CRSP name-history industry code for month t (msenames namedt<=date<=nameendt join in CRSPMonthly.py), contemporaneous. Industry mean: cross-section within (2-digit SIC, month t).",
+      "mechanism": "Clean: firm-level growth uses only lagged fundamentals; industry demeaning (script groupby transform mean; engine _op_industry_adjusted_mean line 887) averages only month-t values that are each public by end of t; SIC assignment is the code valid during month t, not a future reclassification."
+    },
+    {
+      "factor": "ChNAnalyst",
+      "verdict": "clean",
+      "input_timing": "numest (IBES fpi=1 summary): statpers mid-month t, public before month-end, stamped month(statpers); compared to exact calendar t-3 via stata_multi_lag with gap-filling (script) / lag-1 calendar shift (engine). mve_c: CRSP market equity at end of month t, used for the same-month size-quintile screen.",
+      "mechanism": "Clean: coverage change uses t vs t-3 (script) or t vs t-1 (engine), both backward; size screen is contemporaneous end-of-month ME. Two non-lookahead caveats: (1) the Jul-Sep 1987 exclusion (script lines 85-88) is an ex-post data-quality sample filter from the original paper, not an information leak; (2) engine-side the numest var loads through DatasetStore's LINKED path (engine lines 416-431) with NO fpi filter \u2014 pivot aggfunc='last' mixes fpi 0/1/2/6 rows of the same month (horizon-mixing fidelity bug, all same-month-stamped, no future info)."
+    },
+    {
+      "factor": "ChNNCOA",
+      "verdict": "clean",
+      "input_timing": "at, act, ivao, lt, dlc, dltt from m_aCompustat: public datadate+6mo; NNCOA ratio computed at t and t-12 (script positional shift(12) over unique monthly rows; engine calendar delta 12).",
+      "mechanism": "Clean: 12-month first difference of a ratio built entirely from 6-month-lagged annual data; no contemporaneous-datadate or future-vintage access on either side."
+    },
+    {
+      "factor": "ChNWC",
+      "verdict": "clean",
+      "input_timing": "act, che, lct, dlc, at from m_aCompustat: public datadate+6mo; NWC/at at t minus exact calendar t-12 (script stata_multi_lag with fill_date_gaps guarantees true 12-calendar-month lag; engine calendar delta 12 on contiguous panel).",
+      "mechanism": "Clean: identical availability-stamped inputs on both sides, backward-only calendar lags."
+    },
+    {
+      "factor": "ChTax",
+      "verdict": "clean",
+      "input_timing": "txtq from m_QCompustat: stamped max(datadate+3mo, month(rdq)) with >6mo-late filings dropped (CompustatQuarterly.py:88-113), so a quarter announced on any day of month t is first usable at end of t \u2014 correct for end-of-month formation predicting t+1; used at t vs exact calendar t-12. Denominator: script uses annual at from m_aCompustat at t-12 (public datadate+6); engine uses quarterly atq at t-12 (same rdq-aware stamp).",
+      "mechanism": "Clean: rdq-month stamping makes announcement-month data available only at that month's end, never before the announcement; missing-rdq rows fall back to the standard datadate+3 assumption and cannot be later than actual rdq by more than the dropped >6mo tail. Lag-12 denominators are strictly older vintages. (Engine's atq-vs-annual-at swap is a methodology difference, not timing.)"
+    },
+    {
+      "factor": "ChangeInRecommendation",
+      "verdict": "clean",
+      "input_timing": "ireccd from IBES recddet: public at anndats, stamped month(anndats); collapsed to analyst-month last rec then firm-month mean, all within month t; change = month-t mean minus previous observed month's mean (groupby shift/diff, positional so the base month is <= t-1). Permno link: month-t valid IBES-CRSP link window.",
+      "mechanism": "Clean: both script (shift(1) on ticker-sorted monthly means) and engine (_op_change_in_recommendation_signal line 2331, groupby diff) difference month t against an earlier observed month only. Minor non-timing note: script's first collapse (line 31-35) calls .last() without sorting by anndats, so within-month analyst dedup may pick a non-latest same-month rec \u2014 still month-t information."
+    },
+    {
+      "factor": "CompEquIss",
+      "verdict": "clean",
+      "input_timing": "ret and mve_c/mve_permco from monthlyCRSP: month-t return and end-of-month-t market equity, both known at month-end t; compared to exact calendar t-60 (script stata_multi_lag with gap fill; engine lag-60 calendar shift). Script BH return = cumulative return index t vs t-60 (includes month-t return, available end of t); engine compound_return over lags 1..60 (returns t-60..t-1).",
+      "mechanism": "Clean: 5-year growth of ME minus 5-year buy-and-hold return uses only end-of-month-t and older prices/returns. Non-lookahead fidelity bugs on the engine side: the compounding window (t-60..t-1) is shifted one month early relative to the ME window (t-59..t) and misses month-t return, missing returns are filled with 0 across the whole template, and mve_permco replaces the script's mve_c \u2014 all backward-looking discrepancies, no future data."
+    },
+    {
+      "factor": "CompositeDebtIssuance",
+      "verdict": "clean",
+      "input_timing": "dltt, dlc from m_aCompustat: public datadate+6mo; script uses (dltt+dlc) at t vs exact calendar t-60 (positional shift(60) fallback reaches >=60 months back); engine uses dltt at t, t-12, t-60 via calendar shifts.",
+      "mechanism": "Clean: all inputs are 6-month-lagged annual vintages at t or strictly earlier. Non-timing note: engine tree log(dltt/l60)-log(dltt/l12) collapses to log(dltt_{t-12}/dltt_{t-60}) and drops dlc \u2014 a fidelity divergence from Lyandres-Sun-Zhang, but built entirely from lags."
+    },
+    {
+      "factor": "ConsRecomm",
+      "verdict": "clean",
+      "input_timing": "ireccd from IBES recddet: public at anndats, stamped month(anndats); firm-month mean over analysts' latest month-t recs, thresholded (>3 -> 1, <=1.5 -> 0); permno via month-t valid link window. No lags used.",
+      "mechanism": "Clean: level signal built solely from recommendations announced during month t, stamped to that month, on both script and engine (_op_binary_recommendation_level line 2050 replicates the script including the anndats within-month sort)."
+    },
+    {
+      "factor": "ConvDebt",
+      "verdict": "clean",
+      "input_timing": "dc, cshrc from m_aCompustat: fiscal-year values at datadate, public at filing (~3-4mo after FYE); stamped at time_avail_m = datadate+6mo (CompustatAnnual.py:212-215), used at that month or later via 12-month forward expansion with dedup keeping the latest datadate whose +6mo has already passed.",
+      "mechanism": "Pure contemporaneous indicator on 6-month-lagged annual data; engine (native) uses the same lagged panel via _op_convertible_debt_indicator (p1_factor_engine.py:815). Engine ignores cshrc and negative dc vs the script's dc!=0|cshrc!=0 \u2014 a fidelity gap, not a timing leak."
+    },
+    {
+      "factor": "CoskewACX",
+      "verdict": "clean",
+      "input_timing": "dailyCRSP ret and dailyFF mktrf/rf at day d: public end of day d; the value stamped at time_avail_m=t aggregates daily returns from the day after the prior year's month-t anchor through the last trading day of month t.",
+      "mechanism": "The descending sort + forward_fill (CoskewACX.py:73,100-107) assigns each day to the NEXT month-m anchor at-or-after it, i.e. a strictly trailing ~12-month window ending at month-t end; the max_nobs completeness filter (lines 163-168) uses only same-period cross-sectional counts. Engine side is script-backed (_can_execute_natively=False), so it inherits the same timing."
+    },
+    {
+      "factor": "Coskewness",
+      "verdict": "clean",
+      "input_timing": "monthlyCRSP ret and monthlyFF mktrf/rf for month s: public at end of month s; the value stamped at t uses months (prior 60-cycle anchor, t], i.e. up to 60 months ending at t.",
+      "mechanism": "Same descending forward_fill construction (Coskewness.py:60,87-107) yields a trailing <=60-month window ending at the stamped month; nobs>=12 filter is within-window. Engine side is script-backed, identical code path."
+    },
+    {
+      "factor": "DebtIssuance",
+      "verdict": "clean",
+      "input_timing": "dltis, ceq from m_aCompustat: datadate+6mo availability stamp; mve_permco and shrcd from SignalMasterTable at month t = end-of-month-t prc*shrout from CRSPMonthly (CRSPMonthly.py:73,103), public at month-t close.",
+      "mechanism": "Indicator dltis>0 on lagged accounting data; the BM=log(ceq/mve) term only gates sample membership using month-t-end market cap, which is available by end of t. Engine (native) is positive_indicator(dltis) on the same lagged panel (p1_factor_engine.py:799) \u2014 it drops the BM/shrcd filter (fidelity gap only)."
+    },
+    {
+      "factor": "DelCOA",
+      "verdict": "clean",
+      "input_timing": "act, che, at from m_aCompustat: current row available at datadate+6mo; lagged row taken 12 panel rows earlier (script, DelCOA.py:51-53) or 12 calendar months earlier (engine lag/delta via .shift(12) on a gap-free monthly template index, p1_factor_engine.py:670-671,704-714).",
+      "mechanism": "Both sides only reach backward: positional shift(12) on an ascending-sorted deduped panel can never fetch a later row (across listing gaps it fetches >12-month-old data \u2014 stale, not future), and the engine's calendar shift is exact. All numerator/denominator fields sit on the same already-lagged rows."
+    },
+    {
+      "factor": "DelCOL",
+      "verdict": "clean",
+      "input_timing": "lct, dlc, at from m_aCompustat at datadate+6mo; 12-month lag via positional shift (script, DelCOL.py:64-66) / calendar shift on complete template index (engine).",
+      "mechanism": "Identical structure to DelCOA: backward-only lags on 6-month-lagged annual rows; dedup keep='first' and engine pivot aggfunc='last' select among rows all stamped available by month t."
+    },
+    {
+      "factor": "DelDRC",
+      "verdict": "clean",
+      "input_timing": "drc, at plus filter fields ceq, sale, sic from m_aCompustat, all from the same fiscal-year row available at datadate+6mo; 12-month backward lag for drc and at (script DelDRC.py:70-71; engine delta/lag shift(12)).",
+      "mechanism": "Change uses only current-row and 12-months-prior data; exclusion filters (ceq<=0, sale<5, SIC 6000-6999) use contemporaneous same-row values, not future ones. Engine (native) omits those filters entirely \u2014 fidelity gap, not a leak."
+    },
+    {
+      "factor": "DelEqu",
+      "verdict": "clean",
+      "input_timing": "ceq, at from m_aCompustat at datadate+6mo; lag obtained by calendar self-join of row t onto row t-12 (DelEqu.py:35-42: time_lag12 = time_avail_m - 12mo, merged so l12_* come from the strictly earlier month).",
+      "mechanism": "The self-join aligns t with t-12 (current row pulls values FROM 12 months earlier, never the reverse); engine delta/lag(12) is the same backward calendar shift. No alignment of t with t+k on either side."
+    },
+    {
+      "factor": "DelFINL",
+      "verdict": "clean",
+      "input_timing": "dltt, dlc, pstk, at from m_aCompustat at datadate+6mo; backward calendar self-join to t-12 (DelFINL.py:35-52); engine identical via delta/lag(12) with fillna(0) on pstk.",
+      "mechanism": "Backward-only t-12 self-join on already-lagged annual data; pstk fillna(0) is a same-row transformation with no timing content."
+    },
+    {
+      "factor": "DelLTI",
+      "verdict": "clean",
+      "input_timing": "ivao, at from m_aCompustat at datadate+6mo; backward calendar self-join to t-12 (DelLTI.py:35-42); engine delta/lag(12) on the lagged panel.",
+      "mechanism": "Same backward t-12 join pattern; both sides use only rows whose datadate+6mo stamp is <= t."
+    },
+    {
+      "factor": "DelNetFin",
+      "verdict": "clean",
+      "input_timing": "ivst, ivao, dltt, dlc, pstk, at from m_aCompustat at datadate+6mo; net-financial-assets composite built on the current row, then backward calendar self-join to t-12 (DelNetFin.py:45-58); engine delta/lag(12) equivalent.",
+      "mechanism": "Composite and its lag are both computed from rows available at their own stamped months; join direction is strictly t pulling from t-12."
+    },
+    {
+      "factor": "DivInit",
+      "verdict": "clean",
+      "input_timing": "CRSPdistributions divamt/cd2 stamped at exdt month (script DivInit.py:48-50; engine p1_factor_engine.py:1504): the ex-date falls inside month t and the declaration precedes it, so the dividend is public before month-t end; monthlyCRSP base rows at month t are month-end data.",
+      "mechanism": "All windows are trailing: 24-month rolling sum then shift(1) gives dividends over (t-24,t-1], initiation flag compares month-t dividend against that strictly-prior history, and the 6-month rolling max only propagates a PAST initiation forward (script asrol -> polars rolling_* trailing on a gap-filled sorted panel; engine _op_dividend_initiation_flag p1_factor_engine.py:2087-2098 uses pandas trailing rolling on a permno/time-sorted base). Engine spec param lookback_months:12 is ignored in favor of the hardcoded 24 \u2014 fidelity quirk, not a leak."
+    },
+    {
+      "factor": "DivOmit",
+      "verdict": "clean",
+      "input_timing": "CRSP distributions divamt/distcd stamped at exdt month (ex-date is a public market event, preceded by declaration); factor at t uses trailing 3/6/12/18/24-month rolling sums and lags (asrol with calendar gap-fill in script DivOmit.py:64-242; pandas trailing rolling + backward shift in engine _op_dividend_omission_flag, p1_factor_engine.py:2101-2153) over months <= t; SignalMasterTable/monthlyCRSP base rows are month-t stamps of month-t data.",
+      "mechanism": "Both sides use only ex-date-stamped dividends through month t with trailing windows and backward shifts; no forward alignment anywhere."
+    },
+    {
+      "factor": "DivSeason",
+      "verdict": "clean",
+      "input_timing": "Regular cash dividends (cd1==1,cd2==2) stamped at exdt month; frequency code cd3 forward-filled from past observations; prediction uses divpaid lags 2/5/8/11 months (DivSeason.py:136-169; engine _op_seasonal_dividend_indicator p1_factor_engine.py:2156-2179) \u2014 all strictly past months relative to t; 12-month trailing rolling sum gates eligibility.",
+      "mechanism": "Signal at t is built exclusively from dividend lags 2-11 months back and a trailing 12-month sum; cd3 ffill only propagates older info forward."
+    },
+    {
+      "factor": "DivYieldST",
+      "verdict": "clean",
+      "input_timing": "Dividends stamped at exdt month with lags 2/5/11 months for expected dividend (DivYieldST.py:94-102; engine p1_factor_engine.py:2192-2194); prc is CRSP month-t closing price (known end of month t); tercile assignment is a same-month cross-sectional qcut across stocks at t.",
+      "mechanism": "Expected dividend uses only past ex-dates; scaling by month-t price and same-month cross-sectional ranking are contemporaneous public data under the end-of-month-t convention. (Positional shift after the div12>0 row filter can reach further back than the nominal lag \u2014 a fidelity quirk that is backward-only.)"
+    },
+    {
+      "factor": "DolVol",
+      "verdict": "clean",
+      "input_timing": "monthlyCRSP vol and prc stamped at their own month; script uses shift(2) so DolVol_t = log(vol_{t-2}*|prc_{t-2}|) (DolVol.py:30-34); engine tree instead computes a trailing 2-month rolling mean of |prc|*vol including month t with no log (_op_rolling_mean, p1_factor_engine.py:774-776) \u2014 month-t prc/vol are known at end of month t.",
+      "mechanism": "No future data on either side: script is lag-2, engine is a trailing window ending at t (pandas rolling is trailing on a contiguous monthly template index). Note: the engine definition diverges from the script (no 2-month lag, no log) \u2014 a fidelity bug, not look-ahead."
+    },
+    {
+      "factor": "DownRecomm",
+      "verdict": "clean",
+      "input_timing": "IBES recommendations stamped at anndats month (IBESRecommendations.py:62); month-t consensus = mean over analysts' last rec announced in month t; compared to previous rec-month consensus via backward groupby shift (DownRecomm.py:45-50; engine _op_recommendation_change_indicator p1_factor_engine.py:2065-2084); permno link via monthly IBES-CRSP validity-window table.",
+      "mechanism": "All recommendations used at t were announced during or before month t; the change indicator compares t to a prior month only. (Script's within-month 'last' per analyst is not sorted by anndats \u2014 engine sorts; nondeterminism within a month, not a timing leak.)"
+    },
+    {
+      "factor": "EBM",
+      "verdict": "clean",
+      "input_timing": "ceq/che/dltt/dlc/dc/tstkp/dvpa from m_aCompustat at t = fiscal-year data with datadate <= t-6 months (CompustatAnnual.py:212-215 confirms the 6-month reporting lag and 12-month forward carry keeping the freshest published record); mve_permco is month-t CRSP market equity, known at end of month t (script via SignalMasterTable, engine via monthlyCRSP panel).",
+      "mechanism": "Accounting inputs carry the 6-month publication lag; contemporaneous month-t market equity is public at month end. No December-ME or forward alignment involved."
+    },
+    {
+      "factor": "EP",
+      "verdict": "clean",
+      "input_timing": "ib from m_aCompustat at t (datadate <= t-6 months, 6-month lag verified); denominator is mve_permco lagged 6 calendar months (script self-merge on time_avail_m - 6 months, EP.py:50-56; engine lag(mve_permco,6) as panel shift on a contiguous month index, p1_factor_engine.py:704-710) \u2014 i.e., market equity near the fiscal-year-end month, strictly past.",
+      "mechanism": "Earnings are used only after the 6-month reporting lag and are scaled by 6-month-old market equity; both sides align t only with t-6."
+    },
+    {
+      "factor": "EarnSupBig",
+      "verdict": "clean",
+      "input_timing": "epspxq from m_QCompustat at t available at max(datadate+3mo, rdq month) with >6-month-late filers dropped (CompustatQuarterly.py:83-113); surprise uses YoY change minus drift from lags 3-24 months and SD of lagged surprises \u2014 all backward (EarnSupBig.py:55-96 positional shifts; engine _op_seasonal_surprise_zscore calendar shifts, p1_factor_engine.py:1130-1154); mve_c and sicCRSP are month-t CRSP values used for a same-month cross-sectional size rank and industry mean of big firms' month-t surprises (relrank/industry_big_mean are within-month cross-sectional).",
+      "mechanism": "Quarterly EPS enters only after rdq/3-month lag; drift, SD, and lags are strictly backward; the industry aggregation averages other firms' already-available month-t signals cross-sectionally. (Script's positional shift(12) on the inner-merged panel can only reach further back when coverage gaps exist.)"
+    },
+    {
+      "factor": "EarningsConsistency",
+      "verdict": "clean",
+      "input_timing": "epspx from m_aCompustat at t (datadate <= t-6 months); growth uses calendar lags 12/24 and consistency averages egrowth lags 0/12/24/36/48 (stata_multi_lag with gap-fill then backward shift, EarningsConsistency.py:46-62; engine _op_earnings_consistency panel lags, p1_factor_engine.py:1107-1127); exception filters use the same current-and-lagged values.",
+      "mechanism": "Every term is the month-t (already 6-month-lagged) EPS or a strictly older lag of it; no forward references."
+    },
+    {
+      "factor": "EarningsForecastDisparity",
+      "verdict": "clean",
+      "input_timing": "meanest (fpi=1) and fgr5yr (fpi=0) from IBES_EPS_Unadj stamped at statpers month (mid-month summary date, known before month end); fy0a from IBES_UnadjustedActuals stamped at statpers month and forward-filled across gaps (stale-but-published prior-fiscal-year actual, IBESUnadjustedActuals.py:49-85); all merged contemporaneously at t (script EarningsForecastDisparity.py:45-78; engine p1_factor_engine.py:2341-2365).",
+      "mechanism": "All three inputs are IBES summary-file quantities computed as of statpers within month t; fy0a is the prior completed fiscal year's actual already recorded in the summary file, and forward-fill only propagates older values."
+    },
+    {
+      "factor": "EarningsStreak",
+      "verdict": "clean",
+      "input_timing": "IBES_EPS_Adj fpi=6 rows: meanest/price as of statpers (consensus and price snapshot before the announcement), actual with anndats_act; both sides re-stamp time_avail_m to the anndats_act month and keep the latest pre-announcement statpers per ticker-announcement-month (EarningsStreak.py:34-59; engine _op_earnings_streak_signal p1_factor_engine.py:2475-2498); streak compares consecutive past announcements; signal forward-filled up to 6 months after announcement.",
+      "mechanism": "The surprise is stamped at the announcement month, not the forecast month \u2014 actual is public from anndats_act (within month t) and meanest/price predate it; streak lag and 6-month forward-fill only carry past announcements forward. This correctly avoids the classic leak of using IBES 'actual' at statpers month before announcement."
+    },
+    {
+      "factor": "EarningsSurprise",
+      "verdict": "clean",
+      "input_timing": "epspxq from m_QCompustat at t available at max(datadate+3mo, rdq month) (verified in CompustatQuarterly.py:83-113; rdq mid-month stamped at rdq month is usable at end of month t); YoY growth via calendar self-merge on t-12 (EarningsSurprise.py:45-49, lag lookup direction verified: row at t pulls the value stamped t-n); drift from growth lags 3-24 and SD from surprise lags 3-24, all backward (script calendar merges; engine _op_seasonal_surprise_zscore panel shifts).",
+      "mechanism": "Quarterly EPS enters only after its announcement-based availability stamp, and every drift/SD component is a strict calendar lag of already-available values; the t-12 self-merge aligns t with t-12, never t with t+k."
+    },
+    {
+      "factor": "EntMult",
+      "verdict": "clean",
+      "input_timing": "dltt/dlc/dc/che/oibdp/ceq from m_aCompustat: fiscal-year data public ~3-6mo after datadate, stamped and first used at datadate+6 (CompustatAnnual.py:212-215), held 12 months with dedup keeping the latest already-published datadate. mve_permco: CRSP end-of-month-t company market equity, public at end of month t, used at t (script merges SignalMasterTable on same time_avail_m; engine loads monthlyCRSP panel at t).",
+      "mechanism": "All inputs available by end of month t: accounting via the 6-month lag, market equity contemporaneous end-of-month; identical arithmetic in EntMult.py:38-43 and _op_enterprise_multiple (p1_factor_engine.py:820-822)."
+    },
+    {
+      "factor": "EquityDuration",
+      "verdict": "clean",
+      "input_timing": "ceq/ib/sale/prcc_f/csho from a_aCompustat stamped datadate+6; prior-fiscal-year lags via groupby('gvkey').shift(1) use even older published data; monthly expansion adds offsets 0..+11 (availability only pushed later, never earlier); prcc_f*csho is the fiscal-year-end price used >=6 months after fiscal end.",
+      "mechanism": "Dedup traps checked and safe: gvkey-month dedup keeps latest datadate among rows already past their 6-month lag (all published by t); permno-month dedup prefers non-NA/earliest \u2014 same logic script (EquityDuration.py:104-136) and engine (_op_equity_duration_signal, p1_factor_engine.py:1642-1657). Only residual is the dataset-wide comp.funda restated-values vintage, common to every Compustat factor."
+    },
+    {
+      "factor": "ExchSwitch",
+      "verdict": "clean",
+      "input_timing": "exchcd from crsp.msenames joined point-in-time (namedt<=date<=nameendt, CRSPMonthly.py:40-41): month-t code public during month t, used at t; script lags 1-12 and engine lag-12 are strictly backward.",
+      "mechanism": "Only current and past exchange codes enter. Non-timing drift: engine _op_exchange_switch_indicator (p1_factor_engine.py:769-771) flags ANY t vs t-12 difference (no direction filter, and NaN!=value evaluates True for newly-listed/missing months) vs the script's directional NYSE/AMEX/NASDAQ logic over all 12 lags \u2014 a fidelity bug, not look-ahead."
+    },
+    {
+      "factor": "ExclExp",
+      "verdict": "lookahead_confirmed",
+      "input_timing": "int0a: IBES unadjusted actuals stamped at statpers month (IBESUnadjustedActuals.py:49-51), forward-fill only \u2014 public mid-month t, used at t. epspiq: m_QCompustat stamped max(datadate+3, rdq month) (CompustatQuarterly.py:83-113) \u2014 public by end of month t. Winsorization bounds: computed from ALL months pooled, i.e. partly from the future.",
+      "mechanism": "Both sides winsorize with full-sample quantiles: script computes q1/q99 over the entire 1976-present panel then clips every month (ExclExp.py:47-50); engine does the same (p1_factor_engine.py:2377-2381). The clip bounds applied to month t depend on the distribution of future months' ExclExp, so stamped values in the ~2% tails are functions of future data (also creates ties at the bounds that can move portfolio-boundary ranks). Core signal inputs are timing-clean; the leak is in the transformation. (Separate non-timing note: availability-month merge can pair int0a and epspiq from different fiscal quarters \u2014 noise, faithful to OSAP.)"
+    },
+    {
+      "factor": "FEPS",
+      "verdict": "clean",
+      "input_timing": "meanest (fpi='1') from IBES summary stamped at statpers month (IBESEPSUnadjusted.py:47-49); statpers is mid-month (IBES summary calc date), so public before end of month t; used at t with no shift. Within-month dedup keeps latest statpers, still inside month t.",
+      "mechanism": "Forecast-issue-month stamping, no future rows can enter; engine _op_feps_signal (p1_factor_engine.py:2043-2047) filters fpi=='1' and merges the permno link at the same month, mirroring the script."
+    },
+    {
+      "factor": "FirmAge",
+      "verdict": "clean",
+      "input_timing": "Only input is listing presence itself: script counts SignalMasterTable rows per permno through month t (cumcount); engine counts non-NaN prc months through t (cumsum of presence, p1_factor_engine.py:929-935). Presence at t is known at t; the 1926-cohort exclusion uses a deterministic calendar constant.",
+      "mechanism": "Pure backward cumulative count. Non-timing drift: engine anchors 'CRSP start' at the template index origin (monthlyCRSP min month) instead of the script's hard-coded 1926-07, and gaps in prc slow the engine's age counter \u2014 replication differences only."
+    },
+    {
+      "factor": "FirmAgeMom",
+      "verdict": "clean",
+      "input_timing": "ret lags 1-5 = months t-5..t-1 returns, public at their own month-ends (calendar-safe via fill_date_gaps/stata_multi_lag in the script, complete-calendar template shift in the engine); prc = end-of-month-t price for the $5 screen, public end of t; age = cumulative presence through t; quintile cut is cross-sectional within month t only.",
+      "mechanism": "All inputs available by end of month t; momentum window excludes month t itself. Engine (_op_firm_age_momentum, p1_factor_engine.py:966-971) matches timing; only drift is qcut vs percentile-rank bucketing and the script's pre-lag row filtering."
+    },
+    {
+      "factor": "ForecastDispersion",
+      "verdict": "clean",
+      "input_timing": "stdev and meanest from IBES summary stamped at statpers month (mid-month t), used at t, no shift; script filters fpi=='1' with valid fpedats.",
+      "mechanism": "Forecast-issue-month data only. Non-timing drift worth fixing: the engine tree uses raw var nodes on IBES_EPS_Unadj through DatasetStore.get (p1_factor_engine.py:416-431), which does NOT filter fpi \u2014 pivot aggfunc='last' over the fpi-sorted raw file makes fpi='6' (quarterly horizon) rows win where present, unlike the script's fpi='1'. All fpi rows share the same statpers-month availability, so this is a horizon-fidelity bug, not look-ahead."
+    },
+    {
+      "factor": "Frontier",
+      "verdict": "clean",
+      "input_timing": "m_aCompustat regressors (at/ceq/dltt/capx/sale/xrd/xad/ppent/ebitda): stamped datadate+6, public by t. mve_permco: end-of-month-t ME, public end of t. sicCRSP: point-in-time msenames industry at month t. Rolling regression at month t trains on window (t-59..t] only.",
+      "mechanism": "Training mask is time_avail <= current AND > current-60 on both sides (Frontier.py:159-162; p1_factor_engine.py:1757), so coefficients use the current and prior 59 months \u2014 contemporaneous-in-sample but never future months. Dependent variable log(ME) at t is end-of-month-t data, allowed at t. No future info path."
+    },
+    {
+      "factor": "GP",
+      "verdict": "lookahead_confirmed",
+      "input_timing": "revt/cogs/at: stamped datadate+6, public by t \u2014 clean. sic: taken from m_aCompustat, which inherits it from comp.names \u2014 a HEADER table with one current-vintage SIC per gvkey (CompustatAnnual.py:147-156) applied uniformly to the firm's entire history; the classification 'as of download date' was not public at month t.",
+      "mechanism": "The non-financial screen (SIC<6000 or >=7000) at every historical month t uses the firm's present-day header SIC on both sides (script GP.py:37-40; engine nonfinancial_only on the same m_aCompustat 'sic', p1_factor_engine.py:803-806). A firm that later became (or stopped being) a financial reclassifies its whole past, retroactively changing universe membership. The GP ratio itself is timing-clean; the leak is confined to the screen. Historical sich is downloaded (CompustatAnnual.py:37) but unused \u2014 the natural fix. Faithful to OSAP's Stata original, but a genuine leak under the absolute standard."
+    },
+    {
+      "factor": "GrAdExp",
+      "verdict": "clean",
+      "input_timing": "xad at t: stamped datadate+6, public by t; lag-12 xad: prior fiscal year, public a year earlier; xad>=0.1 gate uses the same published value; size-decile filter uses end-of-month-t market equity (script mve_c, engine mve_permco), public end of t, cut cross-sectionally within t.",
+      "mechanism": "Log-growth of two already-published fiscal-year values plus month-t-only gates; engine delta/log/threshold_min/size_decile_filtered ops shift only backward on the complete monthly template. mve_c vs mve_permco is a share-class-aggregation drift, timing-identical."
+    },
+    {
+      "factor": "GrLTNOA",
+      "verdict": "clean",
+      "input_timing": "rect/invt/ppent/aco/intan/ao/ap/lco/lo/at/dp at t: stamped datadate+6, public by t. Lag-12 values: the panel value that was already available at t-12 (published earlier still). dp is the current fiscal year's flow, same publication event as the levels.",
+      "mechanism": "Levels-minus-backward-lags arithmetic identical in script (GrLTNOA.py:83-129, permno-level shift(12) after dedup) and engine (_op_gr_ltnoa, p1_factor_engine.py:953-963, shift(12) on the complete monthly template); no self-join, no forward alignment, dedup keeps first occurrence (timing-neutral)."
+    },
+    {
+      "factor": "GrSaleToGrInv",
+      "verdict": "clean",
+      "input_timing": "sale, invt from m_aCompustat: annual values stamped at time_avail_m = datadate+6mo (CompustatAnnual.py L212-214), forward-filled 12mo. Factor at t uses values stamped t, t-12, t-24 \u2014 all publicly reported >=6 months before t.",
+      "mechanism": "Script (GrSaleToGrInv.py L64-114) and engine (_op_growth_difference_fallback, p1_factor_engine.py L945-950) both compute current vs 12/24-month backward lags on the already-lagged m_aCompustat panel; engine shift is calendar-true on a complete MS index. Only caveat (library-wide, not factor-specific): comp.funda values are latest-vintage, not point-in-time vintages."
+    },
+    {
+      "factor": "GrSaleToGrOverhead",
+      "verdict": "clean",
+      "input_timing": "sale, xsga from m_aCompustat: stamped datadate+6mo. Factor at t uses stamps t, t-12, t-24.",
+      "mechanism": "Identical structure to GrSaleToGrInv: script GrSaleToGrOverhead.py L61-119 and engine _op_growth_difference_fallback use only backward calendar lags of 6-month-lagged accounting data."
+    },
+    {
+      "factor": "Herf",
+      "verdict": "clean",
+      "input_timing": "sale from m_aCompustat (datadate+6mo, so each firm's cross-sectional value at t was public by t); sicCRSP/shrcd from CRSP msenames via date-range join (point-in-time as of month t); 36-month rolling mean uses months t-35..t.",
+      "mechanism": "Cross-sectional industry HHI at month t uses only data stamped <=t (script Herf.py L49-70 via asrol, which is polars trailing rolling_mean with calendar gap-fill; engine _op_rolling_industry_herfindahl L1079-1104 rolls trailing on the complete month index). Regulated-industry/year masks are deterministic rules, no future data."
+    },
+    {
+      "factor": "HerfAsset",
+      "verdict": "clean",
+      "input_timing": "at from m_aCompustat (datadate+6mo); sicCRSP/shrcd point-in-time at t; trailing 36-month mean t-35..t.",
+      "mechanism": "Same pipeline as Herf with 'at' as the metric (HerfAsset.py L49-69; engine rolling_industry_herfindahl). All inputs available by end of month t."
+    },
+    {
+      "factor": "HerfBE",
+      "verdict": "clean",
+      "input_timing": "seq/ceq/pstk/pstkrv/pstkl/at/lt/txditc all from the same m_aCompustat row stamped datadate+6mo; sicCRSP/shrcd point-in-time at t; trailing 36-month mean.",
+      "mechanism": "Book equity is built purely from one contemporaneously-available annual row (HerfBE.py L62-84; engine tree coalesce/fillna over m_aCompustat vars feeding rolling_industry_herfindahl). No cross-period alignment beyond the trailing window."
+    },
+    {
+      "factor": "High52",
+      "verdict": "clean",
+      "input_timing": "dailyCRSP prc: daily prices through the last trading day of month t, stamped at time_avail_m = t (known at month-end t); 52-week high uses monthly maxes of months t-12..t-1.",
+      "mechanism": "Script (High52.py L34-65) divides end-of-month-t price by max over 12 positional monthly lags; engine _op_high_52 (L922-926) uses monthly_max.shift(1).rolling(12).max() on the union month index \u2014 both strictly backward. Positional lags in the script can span calendar gaps for stocks with non-trading months (stale, still past-only)."
+    },
+    {
+      "factor": "IdioVol3F",
+      "verdict": "clean",
+      "input_timing": "dailyCRSP ret and dailyFF mktrf/smb/hml/rf for days within month t; FF3 regression run within-month; stamped at time_avail_m = t (all inputs realized by month-end t; FF daily factors published with days of delay but well before the t+1 formation date).",
+      "mechanism": "Script ZZ0_RealizedVol_IdioVol3F_ReturnSkew3F.py L69-141 groups by permno-month and uses only that month's daily data \u2014 the within-month regression uses no data past month t. Engine side is not native: op 'idio_vol3_f' resolves to _op_delegate_to_script via SNAKE_TO_FACTOR (p1_factor_engine.py L2698-2701), running this same script and re-stamping yyyymm unchanged (standardize_factor_csv_to_parquet L640-664)."
+    },
+    {
+      "factor": "IdioVolAHT",
+      "verdict": "clean",
+      "input_timing": "dailyCRSP ret, dailyFF mktrf/rf; 252-trading-day trailing CAPM regression ending at each day; the last available RMSE within month t is stamped at t.",
+      "mechanism": "Script ZZ2_IdioVolAHT.py L316-341: polars-ols rolling_ols windows end at the current row (trailing), then lastnm-per-month collapse keeps a value computed from days <= month-end t. Engine delegates to this script (SNAKE_TO_FACTOR -> _op_delegate_to_script). No forward window anywhere."
+    },
+    {
+      "factor": "Illiquidity",
+      "verdict": "clean",
+      "input_timing": "dailyCRSP ret/prc/vol within each month; monthly mean of |ret|/(|prc|*vol); 12-month average over months t-11..t stamped at t.",
+      "mechanism": "Script Illiquidity.py L44-82 averages current month plus 11 positional lags requiring all 12 present; engine tree monthly_mean -> rolling_mean(window=12, min_obs=12) (_op_rolling_mean L774-776) is the trailing equivalent on the union month index. All daily inputs realized by month-end t; window strictly backward-inclusive of t."
+    },
+    {
+      "factor": "IndMom",
+      "verdict": "clean",
+      "input_timing": "SignalMasterTable/monthlyCRSP ret for months t-1..t-5 (calendar-merged lags), mve_c and sicCRSP at month t (end-of-month-t cap, point-in-time SIC). All known by end of month t.",
+      "mechanism": "Script IndMom.py L44-96: Mom6m compounds only lagged returns via calendar DateOffset merges; cap-weighting within sic2-month uses month-t weights, contemporaneous with the stamp and available at formation (end of t). Engine _op_industry_weighted_momentum (L974-989) mirrors it with compound_return lags [1..5] and per-date cross-sectional weighting; fillna(0) on ret only widens the universe, no timing shift."
+    },
+    {
+      "factor": "IndRetBig",
+      "verdict": "clean",
+      "input_timing": "ret at month t (return realized during t, known at month-end t), mve_c at t for the size rank, sicCRSP at t mapped to FF48. Signal stamped at t, used for t+1 under the OSAP convention.",
+      "mechanism": "Script IndRetBig.py L43-78 and engine _op_industry_big_return (L2501-2522) are purely cross-sectional within each month t: rank by month-t cap, average month-t returns of top-30% firms. Month-t return as a stamp-t signal is contemporaneous, not future \u2014 it is public at the end-of-month-t formation date (Hou 2007 R(-1) convention)."
+    },
+    {
+      "factor": "IntMom",
+      "verdict": "clean",
+      "input_timing": "monthlyCRSP ret for months t-7..t-12, obtained via calendar-exact merges (script) / calendar-true shifts on a complete MS index (engine).",
+      "mechanism": "Script IntMom.py L43-69 compounds only returns 7-12 months old; engine compound_return with lags [7..12] (_op_compound_return L725-736). Deep backward window, nothing contemporaneous or forward."
+    },
+    {
+      "factor": "IntanBM",
+      "verdict": "lookahead_confirmed",
+      "input_timing": "ceq (m_aCompustat, public at datadate+6mo, used at time_avail_m=t: OK); mve_permco (end-of-month-t market cap, used at t: OK); ret (month-t return known end of month t; cumret through t and 60-month backward lags: OK); per-month cross-sectional OLS uses only month-t data: OK.",
+      "mechanism": "Both sides. tempRet60/ret60 is trimmed at 1%/99% quantiles POOLED OVER THE ENTIRE SAMPLE, so the trim threshold at month t depends on future months' 60-month returns. Script: ZZ1_IntanBM_IntanSP_IntanCFP_IntanEP.py:96 winsor2(..., by=None) -> utils/winsor2.py:217-237 (quantile over full panel). Engine: p1_factor_engine.py:1542 _op_intangible_residual calls _trim_global (lines 1210-1219, np.nanquantile over the whole month x permno panel). tempRet60 is both the regression y and part of the vRet regressor, so future data changes which obs enter the month-t cross-sectional regression and its fitted betas, i.e. the stamped residual. Second-order in magnitude (inherited from the OSAP Stata original) but a genuine full-sample statistic used in-sample."
+    },
+    {
+      "factor": "IntanCFP",
+      "verdict": "lookahead_confirmed",
+      "input_timing": "ib, dp (m_aCompustat, public at datadate+6mo, used at t: OK); mve_permco (end-of-month-t, used at t: OK); ret (through month t plus backward 60-month lags: OK); month-t cross-sectional OLS: OK.",
+      "mechanism": "Same shared mechanism as IntanBM: full-sample 1%/99% trim of tempRet60/ret60 on both sides (script ZZ1 line 96 via winsor2 with by=None; engine _op_intangible_residual p1_factor_engine.py:1542 -> _trim_global lines 1210-1219). Trim cutoffs at month t are computed from all months including the future, altering the month-t regression sample/inputs and hence the residual factor value."
+    },
+    {
+      "factor": "IntanEP",
+      "verdict": "lookahead_confirmed",
+      "input_timing": "ni (m_aCompustat, public at datadate+6mo, used at t: OK); mve_permco (end-of-month-t, used at t: OK); ret (through month t, backward lags only: OK); month-t cross-sectional OLS: OK.",
+      "mechanism": "Same shared mechanism: pooled full-sample 1%/99% trim of the 60-month return on both script (ZZ1 line 96, winsor2 by=None) and engine (_op_intangible_residual line 1542 -> _trim_global lines 1210-1219). Future months' return realizations move the trim thresholds applied at month t."
+    },
+    {
+      "factor": "IntanSP",
+      "verdict": "lookahead_confirmed",
+      "input_timing": "sale (m_aCompustat, public at datadate+6mo, used at t: OK); mve_permco (end-of-month-t, used at t: OK); ret (through month t, backward lags only: OK); month-t cross-sectional OLS: OK.",
+      "mechanism": "Same shared mechanism: pooled full-sample 1%/99% trim of tempRet60/ret60 on both sides (script winsor2 by=None at ZZ1 line 96; engine _trim_global via _op_intangible_residual lines 1541-1542). Month-t trim cutoffs embed future-sample information."
+    },
+    {
+      "factor": "InvestPPEInv",
+      "verdict": "clean",
+      "input_timing": "ppegt, invt, at (m_aCompustat, public at datadate+6mo, stamped at time_avail_m; row for month t reflects the latest fiscal year available by t). Signal at t uses values at t and 12-month lags (script InvestPPEInv.py:68-70 positional shift(12); engine delta/lag with calendar shift(12) on the monthly template).",
+      "mechanism": "Only backward lags of availability-lagged annual data on both sides; the download's 12x monthly expansion is forward-only with dedup keeping the latest already-published datadate (CompustatAnnual.py:224-244). No future info enters."
+    },
+    {
+      "factor": "Investment",
+      "verdict": "clean",
+      "input_timing": "capx, revt (m_aCompustat, public at datadate+6mo, used at t). Ratio at t normalized by a trailing 36-month rolling mean (min 24 obs) ending at t: script utils/asrol.py uses polars rolling_mean (trailing, includes current row); engine _op_investment_to_sales_scaled (p1_factor_engine.py:850-854) uses pandas .rolling(36) (trailing). revt>=10 filter uses current revt only.",
+      "mechanism": "Trailing-window normalization plus contemporaneous filter over availability-lagged data; no centered/forward windows and no full-sample statistics on either side."
+    },
+    {
+      "factor": "LRreversal",
+      "verdict": "clean",
+      "input_timing": "ret (monthlyCRSP/SignalMasterTable, month-t return known end of month t). Script compounds lags 13-36 via positional shift per permno (LRreversal.py:34-45); engine compound_return with calendar lags 13-60 via panel shift (p1_factor_engine.py:725-736), lag k>=13 strictly in the past.",
+      "mechanism": "All inputs are strictly positive (backward) lags of realized monthly returns on both sides; pandas/positional shifts can only reach further into the past when gaps exist. Note (not look-ahead): engine window is t-13..t-60 vs script t-13..t-36 \u2014 a spec-fidelity divergence using only past data."
+    },
+    {
+      "factor": "Leverage",
+      "verdict": "clean",
+      "input_timing": "lt (m_aCompustat, public at datadate+6mo, used at t); mve_permco (SignalMasterTable/monthlyCRSP, end-of-month-t market cap = shrout*|prc| summed by permco within month t, used at t \u2014 available by end of month t as the convention allows).",
+      "mechanism": "Simple contemporaneous ratio of availability-lagged book liabilities to end-of-month-t market equity on both sides; no lags, joins, or statistics that touch future months."
+    },
+    {
+      "factor": "MRreversal",
+      "verdict": "clean",
+      "input_timing": "ret (monthlyCRSP/SignalMasterTable, month-t return known end of month t). Script compounds calendar lags 13-18 via merge on time_avail_m - k months (MRreversal.py:38-72); engine compound_return with calendar lags 1-24 via panel shift, all k>=1 in the past.",
+      "mechanism": "Only positive calendar lags of realized returns on both sides \u2014 no future months referenced. Note (not look-ahead): engine compounds t-1..t-24 vs script t-13..t-18, a large definitional divergence (engine includes the recent year the script deliberately skips) but still past-only data."
+    },
+    {
+      "factor": "MS",
+      "verdict": "clean",
+      "input_timing": "Annual items (at, ceq, ni, oancf, fopt, wcapch, ib, dp, xrd, capx, xad, revt): public at datadate+6mo, used at t. Quarterly items (niq, atq, saleq, oancfy, capxy, xrdq, fqtr): stamped at max(datadate+3mo, rdq month) with forward-only 3-month expansion (CompustatQuarterly.py:90-100,173-201); rdq-month stamping is fine because formation is at END of month t while announcement occurs during month t. mve_permco/sicCRSP: end-of-month-t. BM quintiles and industry medians computed within month t only; rolling sums/vols are trailing (positional or gap-filled trailing windows, both sides); ytd-to-quarterly diffs use prior quarters; tempMS refresh-month gating plus forward-fill propagates only past values.",
+      "mechanism": "Every derived quantity is contemporaneous-or-backward relative to availability stamps on both script (MS.py) and engine (_op_ms_signal, p1_factor_engine.py:1873-2008). Residual notes, neither look-ahead: rows with missing rdq rely on the 3-month reporting-lag assumption; the script's refresh formula (datadate.month+6)%12 maps June fiscal-year-ends to 0 and silently drops them (engine's ((m-1+6)%12)+1 is correct) \u2014 a coverage bug, not future info."
+    },
+    {
+      "factor": "MaxRet",
+      "verdict": "clean",
+      "input_timing": "Daily CRSP returns of month t (each known on its trade date, all known by end of month t); factor stamped at time_avail_m = t and used for formation at end of month t. Script groups by permno-month (MaxRet.py:27-30); engine _op_monthly_max groups the daily panel by calendar month (p1_factor_engine.py:911-912).",
+      "mechanism": "Max of within-month-t realized daily returns stamped at t \u2014 fully observable by the end-of-month-t formation point on both sides; no cross-month or future references."
+    },
+    {
+      "factor": "MeanRankRevGrowth",
+      "verdict": "clean",
+      "input_timing": "revt (m_aCompustat, public at datadate+6mo, used at t). Growth at t = log(revt_t) - log(revt_{t-12}) via calendar merge (script) / calendar shift (engine); cross-sectional rank computed within each month using only that month's growth values; final signal at t uses ranks at t-12, t-24, t-36, t-48, t-60 via backward calendar merges (script MeanRankRevGrowth.py:73-114) / backward shifts (engine _op_weighted_lagged_rank_growth, p1_factor_engine.py:992-1003).",
+      "mechanism": "Within-month ranking plus strictly backward calendar lags of those ranks on both sides; no future months enter any rank or weight."
+    },
+    {
+      "factor": "Mom12m",
+      "verdict": "clean",
+      "input_timing": "monthlyCRSP ret: month-m return stamped time_avail_m=m (CRSPMonthly.py mofd(date)), public at end of month m. Factor at t uses ret of months t-11..t-1, all public before end of t.",
+      "mechanism": "Script compounds stata_multi_lag lags 1-11 (calendar-gap-filled backward shift); engine compound_return lags 1-11 via shift(k) on a complete ascending monthly grid \u2014 both strictly backward."
+    },
+    {
+      "factor": "Mom12mOffSeason",
+      "verdict": "clean",
+      "input_timing": "monthlyCRSP ret: month-m return public at end of month m. Factor at t averages ret of months t-10..t-1 (annual lag 11 excluded by construction never triggers in range 1-10).",
+      "mechanism": "Script mean of backward lags 1-10 after fill_date_gaps; engine mean_of_lags [1..10] with backward shift. fill_missing=0 vs script NaN-skip mean diverges numerically at series start but only zero-fills, no future data."
+    },
+    {
+      "factor": "Mom6m",
+      "verdict": "clean",
+      "input_timing": "monthlyCRSP ret: month-m return public at end of month m. Factor at t uses ret of months t-5..t-1.",
+      "mechanism": "Script compounds lags 1-5 via stata_multi_lag; engine compound_return lags 1-5; both strictly backward calendar lags."
+    },
+    {
+      "factor": "MomOffSeason",
+      "verdict": "clean",
+      "input_timing": "monthlyCRSP ret: month-m return public at end of month m. Factor at t averages ret of months t-58..t-12 excluding annual lags 23/35/47/59.",
+      "mechanism": "Script lags range(12,60) minus (lag+1)%12==0; engine lag list is the identical 44 lags [12-22,24-34,36-46,48-58]; backward shift on both sides."
+    },
+    {
+      "factor": "MomOffSeason06YrPlus",
+      "verdict": "clean",
+      "input_timing": "monthlyCRSP ret: month-m return public at end of month m. Factor at t averages ret of months t-118..t-60 excluding annual lags 71/83/95/107/119.",
+      "mechanism": "Script lags range(60,120) minus annual; engine identical 55-lag list; strictly backward shifts on gap-filled/complete monthly grids."
+    },
+    {
+      "factor": "MomOffSeason11YrPlus",
+      "verdict": "clean",
+      "input_timing": "monthlyCRSP ret: month-m return public at end of month m. Factor at t averages ret of months t-178..t-120 excluding annual lags 131/143/155/167/179.",
+      "mechanism": "Script lags range(120,180) minus annual; engine identical 55-lag list; backward-only shifts."
+    },
+    {
+      "factor": "MomOffSeason16YrPlus",
+      "verdict": "clean",
+      "input_timing": "monthlyCRSP ret: month-m return public at end of month m. Factor at t averages ret of months t-238..t-180 excluding annual lags 191/203/215/227/239.",
+      "mechanism": "Script lags range(180,240) minus annual; engine identical 55-lag list; backward-only shifts."
+    },
+    {
+      "factor": "MomRev",
+      "verdict": "clean",
+      "input_timing": "monthlyCRSP ret: month-m return public at end of month m. Factor at t uses ret of t-5..t-1 (Mom6m) and t-36..t-13 (Mom36m); quintile breakpoints use only the month-t cross-section of those backward-looking values.",
+      "mechanism": "Script: backward lags then within-month qcut per time_avail_m; engine momentum_reversal_signal: compound_return lags 1-5 / 13-36 then _row_bucket rank(axis=1) per month row \u2014 no pooling across time, no forward alignment. (Engine fillna(0) on the full ret panel lets pre-listing permnos enter the month-t ranking with zero momentum \u2014 a fidelity divergence from the script, not a leak.)"
+    },
+    {
+      "factor": "MomSeason",
+      "verdict": "clean",
+      "input_timing": "monthlyCRSP ret: month-m return public at end of month m. Factor at t averages ret at lags 23/35/47/59 months (same-calendar-month returns of years 2-5 relative to predicted month t+1).",
+      "mechanism": "Script rowmean of stata_multi_lag lags [23,35,47,59]; engine mean_of_lags same list; both strictly backward. Engine fill_missing=0 divides by all 4 lags at series edges vs script NaN-skip \u2014 numeric divergence only, zero-fill carries no future info."
+    },
+    {
+      "factor": "MomSeason06YrPlus",
+      "verdict": "clean",
+      "input_timing": "monthlyCRSP ret: month-m return public at end of month m. Factor at t averages ret at lags 71/83/95/107/119 months.",
+      "mechanism": "Identical backward-lag construction on both sides with matching lag lists; edge-case zero-fill divergence in engine mean is backward-looking."
+    },
+    {
+      "factor": "MomSeason11YrPlus",
+      "verdict": "clean",
+      "input_timing": "monthlyCRSP ret: month-m return public at end of month m. Factor at t averages ret at lags 131/143/155/167/179 months.",
+      "mechanism": "Identical backward-lag construction on both sides with matching lag lists; shift(k>0) on ascending complete monthly index cannot reach future rows."
+    },
+    {
+      "factor": "MomSeason16YrPlus",
+      "verdict": "clean",
+      "input_timing": "monthlyCRSP ret: month-m return public at end of month m. Factor at t averages ret at lags 191/203/215/227/239 months.",
+      "mechanism": "Identical backward-lag construction on both sides with matching lag lists; strictly backward shifts, no self-join or restatement channel (CRSP ret is not restated; delisting return is announced within its stamped month)."
+    },
+    {
+      "factor": "MomSeasonShort",
+      "verdict": "clean",
+      "input_timing": "ret (monthlyCRSP via SignalMasterTable): return realized during month t-11 (script) / t-11 and t-23 (engine), publicly available at end of those past months; factor stamped at t.",
+      "mechanism": "Script (MomSeasonShort.py:42) uses stata_multi_lag lag 11 (gap-filled positive shift = backward calendar lag); engine uses mean_of_lags [11,23] via _op_lag shift on a contiguous monthly index (p1_factor_engine.py:717-722, 704-710) \u2014 all inputs strictly in the past. Side note (not look-ahead): engine's [11,23] mean and fill_missing=0 differ from script's single lag-11 definition."
+    },
+    {
+      "factor": "MomVol",
+      "verdict": "clean",
+      "input_timing": "ret: months t-1..t-5 (past). vol: trailing 6-month mean over t-5..t incl. current month \u2014 month-t volume is known at end of month t, which is exactly the stamp month. Momentum deciles / volume terciles: cross-section of the same month t.",
+      "mechanism": "Script lags via stata_multi_lag (backward), asrol is a trailing polars rolling_mean over a gap-filled sorted panel (asrol.py:76-97), qcut buckets are groupby(time_avail_m) per-month; engine _op_momentum_volume_signal (p1_factor_engine.py:1034-1042) mirrors this with compound_return over lags 1-5, vol.rolling(6) trailing, and _row_bucket per-month rank; the 24-obs gate uses only history. Nothing reaches past end of month t."
+    },
+    {
+      "factor": "NOA",
+      "verdict": "clean",
+      "input_timing": "at, che, dltt, mib, dc, ceq from m_aCompustat at t: fiscal data with datadate >= 6 months before t (CompustatAnnual.py:212-215), i.e. assumed published by t. l12.at: same data 12 months earlier.",
+      "mechanism": "Script shift(12) is a positional backward shift within permno sorted ascending (NOA.py:47,56) \u2014 can only reach older rows even across gaps; engine uses calendar lag(at,12) backward. All numerator fields taken at their availability-stamped month; nothing forward."
+    },
+    {
+      "factor": "NetDebtFinance",
+      "verdict": "clean",
+      "input_timing": "dltis, dltr, dlcch, at from m_aCompustat at t (datadate+6 availability lag embedded); l12.at from t-12.",
+      "mechanism": "Both sides use only month-t availability-lagged annual data and a backward 12-month lag of at (script NetDebtFinance.py:45, engine lag op); dedup keep-first operates on an already unique permno-month file. Side note (not look-ahead): engine expression is dltis - dltr - fillna(dlcch,0), flipping the script's +dlcch sign."
+    },
+    {
+      "factor": "NetDebtPrice",
+      "verdict": "clean",
+      "input_timing": "Script: dltt, dlc, pstk, dvpa, tstkp, che, sic, at, ib, csho, ceq, prcc_f from m_aCompustat at t (>=6-month reporting lag); mve_permco from monthlyCRSP at t = end-of-month-t market cap, available end of month t (CRSPMonthly.py:73) \u2014 permitted at stamp t. Engine: 12-month change in (dltt+dlc-che) plus lag(mve_permco,6), all t or earlier.",
+      "mechanism": "Script's BM quintile filter uses fastxtile_by_group grouped by time_avail_m (same-month cross-section only); engine nonfinancial_only masks on sic at t and lags are backward shifts. No December-ME-before-December or future-price usage. Side note (not look-ahead): engine implements a net-debt change over lagged ME rather than the script's net-debt level (incl. pstk+dvpa-tstkp) over current ME."
+    },
+    {
+      "factor": "NetEquityFinance",
+      "verdict": "clean",
+      "input_timing": "sstk, prstkc, dv, at from m_aCompustat at t (datadate+6 embedded); l12.at from t-12.",
+      "mechanism": "Identical backward structure to NetDebtFinance on both sides (script shift(12) positional backward, engine calendar lag). Side note (not look-ahead): engine omits the -dv term present in the script."
+    },
+    {
+      "factor": "NetPayoutYield",
+      "verdict": "clean",
+      "input_timing": "dvc, prstkc, sstk, sic, ceq from m_aCompustat at t (>=6-month lag from datadate); mve_permco lagged 6 months (t-6), available long before t.",
+      "mechanism": "Script's calendar lag is a self-merge where the lookup row's time_avail_m equals t-6 (NetPayoutYield.py:47-56) \u2014 strictly backward, no t/t+k alignment; the 24-obs cumcount gate uses only prior rows; engine uses lag(mve_permco,6) shift. Clean on both sides."
+    },
+    {
+      "factor": "NumEarnIncrease",
+      "verdict": "clean",
+      "input_timing": "ibq from m_QCompustat at t: time_avail_m = max(datadate+3 months, rdq month), filings >6 months late dropped (CompustatQuarterly.py:90-113); an rdq-month stamp means the announcement occurs during month t, so data is available by end of month t as the convention requires. Lags of chearn at t-3..t-24 are older still.",
+      "mechanism": "Script builds chearn and its lags via calendar self-merges on time_avail_m - k (NumEarnIncrease.py:38-51) \u2014 each merge matches row t to the row stamped exactly k months earlier; engine _op_earnings_increase_streak (p1_factor_engine.py:1157-1168) uses only lag(chearn, 0..24) backward shifts. Residual data caveat, not a coded leak: rows with missing rdq fall back to the unverified datadate+3 assumption (mostly pre-1971). Side note (not look-ahead): engine emits 0 rather than missing outside the ibq-covered universe."
+    },
+    {
+      "factor": "OPLeverage",
+      "verdict": "clean",
+      "input_timing": "xsga, cogs, at from m_aCompustat at t \u2014 annual fundamentals with the 6-month reporting lag embedded at build time.",
+      "mechanism": "Pure contemporaneous ratio of availability-lagged fields on both sides (script OPLeverage.py:41-53, engine div/add/fillna); no lags, no cross-time joins, nothing to leak."
+    },
+    {
+      "factor": "OperProf",
+      "verdict": "clean",
+      "input_timing": "revt, cogs, xsga, xint, ceq from m_aCompustat at t (datadate+6); size ranks from mve_c (script) / mve_permco (engine) at t = end-of-month-t market cap, available end of month t.",
+      "mechanism": "Size terciles are computed within each month's cross-section \u2014 script groupby(time_avail_m) qcut (OperProf.py:51-53), engine _op_size_filtered rank(axis=1) per month row (p1_factor_engine.py:825-841) \u2014 so no pooled full-sample breakpoints and no future months in the ranking. Side note (not look-ahead): engine ranks on mve_permco where the script uses mve_c."
+    },
+    {
+      "factor": "OperProfRD",
+      "verdict": "clean",
+      "input_timing": "xrd, revt, cogs, xsga, at, ceq from m_aCompustat at t (6-month lag embedded); filter fields shrcd, sicCRSP, mve_c from monthlyCRSP at t (end-of-month-t values).",
+      "mechanism": "Contemporaneous ratio of availability-lagged accounting data with same-month static filters on both sides (script OperProfRD.py:52-61, engine div/add/fillna); merge is on (permno, time_avail_m) with no time offset."
+    },
+    {
+      "factor": "OrderBacklog",
+      "verdict": "clean",
+      "input_timing": "ob, at from m_aCompustat at t (datadate+6); l12.at from t-12.",
+      "mechanism": "Script shift(12) positional backward within sorted permno panel (OrderBacklog.py:33), engine calendar lag(at,12) backward, plus a zero-to-null mask on the same-month ob value \u2014 no forward-looking input on either side."
+    },
+    {
+      "factor": "OrderBacklogChg",
+      "verdict": "clean",
+      "input_timing": "ob, at from m_aCompustat: fiscal-year values stamped datadate+6mo and carried 12mo forward (CompustatAnnual.py:212-244). Factor at t uses the t row plus 12-month-lagged rows only.",
+      "mechanism": "Both sides use only backward lags: script (OrderBacklogChg.py:30,37) groupby.shift(12) after sort; engine tree delta/lag(12) on calendar-indexed monthly panels (p1_factor_engine.py:704-714). Script shift is positional (no gap fill) so on gappy panels it can grab data older than 12 months \u2014 staler, never future."
+    },
+    {
+      "factor": "PS",
+      "verdict": "clean",
+      "input_timing": "Nine Compustat fields at t (datadate+6mo lag embedded) and their 12-month lags; mve_permco and shrout from monthlyCRSP at t = end-of-month-t values (standard end-of-month formation); BM quintile computed cross-sectionally within month t.",
+      "mechanism": "Script (PS.py:82-87) lags via fill_date_gaps + stata_multi_lag = true backward calendar lags; engine _op_piotroski_score (p1_factor_engine.py:2530-2581) uses shift(12) on the calendar monthly template and row-wise BM buckets per month. No future rows enter either side."
+    },
+    {
+      "factor": "PayoutYield",
+      "verdict": "clean",
+      "input_timing": "dvc/prstkc/pstkrv at t (datadate+6mo); denominator is market equity 6 months BEFORE t (\u2248 fiscal-year-end ME, itself end-of-month data from monthlyCRSP).",
+      "mechanism": "Script (PayoutYield.py:55-64) merges mve_permco via calendar lag6_date lookup; engine uses lag(mve_permco,6) on the monthly panel \u2014 both strictly backward. Engine drops the script's 24-obs/SIC/ceq filters (fidelity, not timing)."
+    },
+    {
+      "factor": "PctAcc",
+      "verdict": "clean",
+      "input_timing": "ib, oancf, dp and balance-sheet items all from the same m_aCompustat row at t (datadate+6mo); fallback uses 12-month backward lags of act/che/lct/dlc/txp.",
+      "mechanism": "Script (PctAcc.py:53-57) uses backward positional shift(12); engine _op_cash_flow_from_operations_fallback (p1_factor_engine.py:755-759) uses backward calendar lags. No future data. Note: engine fallback omits the txp change term the script includes \u2014 a fidelity gap, not look-ahead."
+    },
+    {
+      "factor": "PctTotAcc",
+      "verdict": "clean",
+      "input_timing": "ni, prstkcc, sstk, dvt, oancf, fincf, ivncf all contemporaneous from the single m_aCompustat row at t (datadate+6mo publication lag embedded).",
+      "mechanism": "Pure same-row arithmetic on one annual report per month on both sides (PctTotAcc.py:43-46; engine sub/add/div tree) \u2014 no lags, joins, or cross-time operations at all."
+    },
+    {
+      "factor": "PredictedFE",
+      "verdict": "clean",
+      "input_timing": "feps1/feps2: May statpers consensus stamped June (statpers month +1mo, ZZ1 script:57-59 / engine:1351-1356); LTG: June statpers (mid-June, public by June-end stamp); ROE/SG/BM from m_aCompustat at June t (datadate+6mo, datadate month>=6 screen); mve = end-of-June shrout*|prc|. FErr at t = FROE1 from June t-12 minus ROE published >=6mo before t. Rank regressors lagged one June back.",
+      "mechanism": "Cross-sectional FErr regression is fit strictly within each June t group (.over(time_avail_m) in script; _ols_predictions_by_group in engine p1_factor_engine.py:1302-1330) using realized ROE already public at t and year-old forecasts; coefficients applied to same-t ranks; 12-month forward expansion only propagates past values. Engine lags ranks by positional shift(1) over June rows (vs script's calendar 12mo join) \u2014 can only reach further into the past."
+    },
+    {
+      "factor": "Price",
+      "verdict": "clean",
+      "input_timing": "prc from monthlyCRSP/SignalMasterTable at t = closing price of month t, known at month-end formation.",
+      "mechanism": "log|prc| of the contemporaneous month with no transformation across time on either side (Price.py:28; engine log(abs(prc)) tree) \u2014 end-of-month-t price for a t-stamped signal is the library-wide formation convention."
+    },
+    {
+      "factor": "PriceDelayRsq",
+      "verdict": "clean",
+      "input_timing": "Daily returns (dailyCRSP, stamped trading day) and FF market factors (dailyFF, same-day) from July y-1 through June y; result stamped July y (June group +1 skip-month, script:301-303) and forward-filled up to the next annual estimate.",
+      "mechanism": "Engine delegates to the same ZZ2 script (daily deps fail _can_execute_natively, p1_factor_engine.py:261-269). Regression window ends June 30 of year y, stamp is July y \u2014 data predates the stamp by a month; mktLag1-4 are backward shifts; forward-fill only propagates old estimates. No future returns enter any group."
+    },
+    {
+      "factor": "PriceDelaySlope",
+      "verdict": "clean",
+      "input_timing": "Same as PriceDelayRsq: trailing 12-month daily window ending June y, unrestricted-regression slopes, stamped July y then forward-filled.",
+      "mechanism": "Identical script path (ZZ2:97-303); group assignment maps each daily obs to the NEXT June (month+6mo year extraction) so windows are strictly trailing, and the +1 month offset adds a conservative skip-month. Engine side is the same script via delegation."
+    },
+    {
+      "factor": "PriceDelayTstat",
+      "verdict": "clean",
+      "input_timing": "Same trailing July y-1..June y daily window; t-statistics of market-lag coefficients; stamped July y, forward-filled.",
+      "mechanism": "Same construction as the other two PriceDelay measures in the shared script; all regressors are contemporaneous or lagged market returns within a window that closes before the stamp month begins. Engine delegates to the script."
+    },
+    {
+      "factor": "RD",
+      "verdict": "clean",
+      "input_timing": "xrd from m_aCompustat at t (datadate+6mo publication lag); mve_permco from monthlyCRSP at t (end-of-month-t market equity).",
+      "mechanism": "Same-month join of a 6-months-stale accounting number to current market equity on both sides (RD.py:36-39; engine div tree) \u2014 current-month ME in the denominator is available at formation; no future data."
+    },
+    {
+      "factor": "RDAbility",
+      "verdict": "clean",
+      "input_timing": "xrd, sale from a_aCompustat by fyear; the gamma at fiscal year i comes from a TRAILING 8-year window (rows i-7..i) of sales growth regressed on R&D intensity lagged 1-5 more years; stamped datadate_i+6mo, expanded 12 months forward, dedup keeps latest available datadate <= t; R&D-intensity terciles cut within each annual stamp month.",
+      "mechanism": "Script rolling_ols window_size=8 over gvkey sorted by fyear (RDAbility.py:282-291) and engine window start=max(0,i-7)..i (p1_factor_engine.py:1817-1826) are both trailing-inclusive; tempXLag is a backward shift; tercile qcut is cross-sectional within one stamp month; expansion/dedup only carries past reports forward. No path touches fyear > i."
+    },
+    {
+      "factor": "RDcap",
+      "verdict": "clean",
+      "input_timing": "xrd, at from m_aCompustat: annual data at time_avail_m carries a verified 6-month post-datadate lag (CompustatAnnual.py L212-215), so values used at t were filed >=6 months before t; xrd lags 12/24/36/48 reach further back. mve_c (script: SignalMasterTable; engine: monthlyCRSP) is end-of-month-t market cap, public at end of t; size terciles are cross-sectional within month t only.",
+      "mechanism": "Both sides use only t-and-earlier data: script lags via stata_multi_lag (fill_date_gaps + backward shift, RDcap.py L51-66); engine lags via shift on a contiguous monthly grid (_op_lag, p1_factor_engine.py L704-710) with same-month cross-sectional size rank. Side note (not lookahead): engine output is provably all-NaN because _op_size_filtered's default min_tercile=2 contradicts the spec's max_tercile=1 (engine L825-841, confirmed 'engine_broken_empty' in p1_factor_reconciliation.json), and the engine's grid-wide fillna(0) manufactures early-window values from backward-looking zeros."
+    },
+    {
+      "factor": "REV6",
+      "verdict": "clean",
+      "input_timing": "meanest from IBES_EPS_Unadj stamped at statpers month (forecast-issue month, IBESEPSUnadjusted.py L48) \u2014 the consensus used at t was computed mid-month t, public by end of t; revisions sum current + 6 backward lags (months t-6..t). prc scaling uses the previous row's price (t-1 or older). Fill-forward of meanest uses only shift(1) lagged values.",
+      "mechanism": "All shifts are backward on both sides: script REV6.py L74-91 (positional shift(1) and shift(1..6) per permno); engine _op_sum_scaled_revisions L2296-2328 mirrors it on IBES-link rows with monthlyCRSP prc. The known discrepancy (positional shift jumping SMT gaps, reconciliation-confirmed) pulls *older* stale data, never future data."
+    },
+    {
+      "factor": "RealizedVol",
+      "verdict": "clean",
+      "input_timing": "dailyCRSP ret and dailyFF rf for trading days inside month t, stamped time_avail_m = t (ZZ0 script L69); daily market data is public same-day, so the full month's returns are known at end of t.",
+      "mechanism": "Std of within-month-t daily excess returns only \u2014 no cross-month window, no future days; engine is script-backed (FactorScriptAdapter runs the identical OSAP script; _can_execute_natively=False for daily deps), and the CSV-to-parquet standardization does not shift dates (engine L640-664)."
+    },
+    {
+      "factor": "ResidualMomentum",
+      "verdict": "clean",
+      "input_timing": "monthlyCRSP ret and monthlyFF rf/mktrf/smb/hml stamped at their own return month (FamaFrenchMonthly.py L43); the FF3 rolling regression at observation s uses the trailing 36-obs window ending at s; the momentum score at t averages residuals from observations t-11..t-1 (shift(1) then 11-obs rolling mean).",
+      "mechanism": "Script-backed on both sides (rolling_residual_momentum is a delegated operator); rolling_ols windows end at the current row and residuals are lagged one observation before scoring (ZZ1 script L85-146), so every input to the t-stamped value is from month t-1 or earlier; position-based windows can only substitute *older* data when a permno has gaps."
+    },
+    {
+      "factor": "ReturnSkew",
+      "verdict": "clean",
+      "input_timing": "dailyCRSP ret for days inside month t, grouped by time_avail_m = truncate(time_d,month) (ReturnSkew.py L48), public same-day; >=15-day filter uses only the same month's row count.",
+      "mechanism": "Pure within-month-t aggregation (skewness) with no lags or leads; engine is script-backed with date-preserving standardization."
+    },
+    {
+      "factor": "ReturnSkew3F",
+      "verdict": "clean",
+      "input_timing": "dailyCRSP ret and dailyFF mktrf/smb/hml/rf for days inside month t; the FF3 regression is estimated per permno-month on that month's days only, and the skewness of its residuals is stamped at t.",
+      "mechanism": "The within-month regression uses no data outside month t (ZZ0 script L84-141), so betas and residuals at t depend only on month-t public market data; engine is script-backed (daily deps force script execution)."
+    },
+    {
+      "factor": "RevenueSurprise",
+      "verdict": "clean",
+      "input_timing": "revtq, cshprq from m_QCompustat: time_avail_m = max(datadate+3mo, rdq month) with >6-month-late filers dropped (CompustatQuarterly.py L83-113) \u2014 a quarter announced mid-month t is first usable at t, satisfying end-of-month-t availability; all comparison terms are calendar lags t-3..t-24 of that already-lagged series.",
+      "mechanism": "Script uses backward calendar merges (time_avail_m - 3..24 months, RevenueSurprise.py L49-87); engine _op_seasonal_surprise_zscore L1130-1154 uses backward shifts on the contiguous grid \u2014 no self-join aligns t with t+k. Caveats (not construction leaks): missing-rdq rows fall back to the datadate+3 assumption, and Compustat FUNDQ is not point-in-time so restated values can overwrite originals \u2014 an upstream vintage limitation shared by the whole OSAP pipeline, and the dedup 'keep latest datadate' only ever selects among rows whose own availability stamp is <= the month."
+    },
+    {
+      "factor": "RoE",
+      "verdict": "clean",
+      "input_timing": "ni and ceq from the same m_aCompustat row at t, i.e. the latest annual report with datadate >=6 months before t (verified 6-month lag + 12-month forward fill).",
+      "mechanism": "Same-month division of two co-stamped, already-lagged annual fields on both sides (script RoE.py L31; engine div node on m_aCompustat panels); dedup differences (script keep-first vs engine pivot keep-last) choose among rows all available at t."
+    },
+    {
+      "factor": "SP",
+      "verdict": "clean",
+      "input_timing": "sale from m_aCompustat at t (>=6-month-lagged annual filing); mve_permco from monthlyCRSP/SMT at t = end-of-month-t price x shares, public at end of t.",
+      "mechanism": "Numerator is stale-by-construction accounting data, denominator is contemporaneous month-t market equity used at its own availability month \u2014 standard OSAP convention, no future field on either side (script SP.py L40; engine div node)."
+    },
+    {
+      "factor": "STreversal",
+      "verdict": "clean",
+      "input_timing": "monthlyCRSP ret: the return over month t, stamped time_avail_m = t (CRSPMonthly.py L73), fully realized at end of t. Script uses ret_t at t; engine tree lags it so the engine value at t is ret_{t-1}.",
+      "mechanism": "Script (fill_null(0) of ret_t, no lead) uses exactly end-of-month-t information; engine's lag(ret,1) (spec tree + _op_lag) uses month t-1 \u2014 one month *staler* than the script (reconciliation-confirmed 'timing_lag_shift' discrepancy) but strictly backward, so neither side sees future data."
+    },
+    {
+      "factor": "ShareIss1Y",
+      "verdict": "clean",
+      "input_timing": "shrout and cfacshr from monthlyCRSP at months t-6 and t-18 (script: calendar merges on time_avail_m - 6/18, ShareIss1Y.py L59-74; engine: time_lagged_value = backward shift on contiguous grid). Both reference months precede t.",
+      "mechanism": "cfacshr is cumulative-to-snapshot, but the signal is a ratio of adjusted shares at two past dates, so the snapshot component cancels and only splits between t-18 and t-6 (all pre-t events) enter \u2014 matching the no-lookahead analysis cited in the script header (OSAP issue #152); all joins are t-minus-k merges, never t-plus-k."
+    },
+    {
+      "factor": "ShareIss5Y",
+      "verdict": "clean",
+      "input_timing": "shrout and cfacshr from monthlyCRSP at months t-5 and t-65 (script calendar merges L54-69; engine backward shifts of 5/65 months on the contiguous monthly template).",
+      "mechanism": "Identical structure to ShareIss1Y: ratio of split-adjusted shares at two strictly-past months, cumulative adjustment factor cancels except for pre-t splits; no future-month self-join on either side."
+    },
+    {
+      "factor": "ShareRepurchase",
+      "verdict": "clean",
+      "input_timing": "prstkc (annual Compustat) stamped at time_avail_m = datadate+6..17 months (verified CompustatAnnual.py:212-244), i.e. used only from ~6 months after fiscal year end; factor value at t uses only the row available at t.",
+      "mechanism": "Pointwise indicator (prstkc>0) with no time operations on either side (script ShareRepurchase.py:30-33; engine _op_positive_indicator, p1_factor_engine.py:799-800); both consume the lagged m_aCompustat stamp as-is."
+    },
+    {
+      "factor": "ShareVol",
+      "verdict": "clean",
+      "input_timing": "monthlyCRSP vol/shrout at time_avail_m = month of observation (CRSPMonthly.py:73), available end of month t; signal at t uses vol at t, t-1, t-2 and shrout changes over t, t-1, t-2.",
+      "mechanism": "Script uses shift(1)/shift(2) on ascending-sorted rows (ShareVol.py:53-104); engine uses _op_lag (x.shift(n), past rows) on a complete calendar template (_op_share_volume_signal, engine:1045-1054; obs_num gate via cummax/cumsum is past-only, engine:1017-1031). All inputs are month-t-or-earlier."
+    },
+    {
+      "factor": "Size",
+      "verdict": "clean",
+      "input_timing": "Market equity of month t: script uses SignalMasterTable mve_c = shrout*|prc| of month t (CRSPMonthly.py:103); engine uses monthlyCRSP mve_permco of month t. Both are end-of-month-t values.",
+      "mechanism": "Pointwise log of current-month market equity, no time ops (Size.py:28; engine log(abs(mve_permco))). Engine uses permco-aggregated ME vs script's security-level mve_c \u2014 a definitional fidelity difference, not a timing one."
+    },
+    {
+      "factor": "SurpriseRD",
+      "verdict": "clean",
+      "input_timing": "xrd/revt/at from m_aCompustat at datadate+6mo stamp; 12-month lag terms reference the prior fiscal year's row, available even earlier.",
+      "mechanism": "Script: shift(12) on ascending permno-month rows after dedup (SurpriseRD.py:26-40) \u2014 strictly past rows; engine: _op_lag(x,12) calendar shift on complete template (_op_surprise_rd_indicator, engine:1171-1185). No future alignment."
+    },
+    {
+      "factor": "Tax",
+      "verdict": "clean",
+      "input_timing": "txfo/txfed/txt/txdi/ib at m_aCompustat datadate+6mo stamp; statutory top tax rate assigned by calendar year of time_avail_m \u2014 deterministic public knowledge, not data.",
+      "mechanism": "Pointwise ratio with piecewise fallbacks, no time operations (Tax.py:35-85; engine _op_piecewise_tax_ratio, engine:2205-2247). The rate table keyed off availability-year rather than fiscal year is a replication choice, not a leak."
+    },
+    {
+      "factor": "TotalAccruals",
+      "verdict": "clean",
+      "input_timing": "All balance-sheet/cash-flow items at m_aCompustat datadate+6mo stamp; 12-month lags reach the prior fiscal year; regime switch (balance-sheet vs cash-flow method) keyed off time_avail_m year <=1989, which is deterministic.",
+      "mechanism": "Script shift(12) on sorted rows (TotalAccruals.py:67-95); engine .shift(12) on calendar template with identical year mask (_op_total_accruals_signal, engine:2250-2293). Trailing only."
+    },
+    {
+      "factor": "TrendFactor",
+      "verdict": "clean",
+      "input_timing": "Daily adjusted prices through the last trading day of month t (MAs A_L, TrendFactor.py:1392-1434); month-(t+1) return fRet enters only the cross-sectional beta stamped at month t; those betas are consumed with a >=1-month shift, so the newest beta used at t is _b(t-1), which requires the month-t return \u2014 realized by end of month t when the factor is stamped.",
+      "mechanism": "Script-backed on BOTH sides (_can_execute_natively=False; engine runs TrendFactor.py). The fRet self-join (offset_by('-1mo'), lines 1489-1499) does align row t with ret(t+1), but EBeta uses shift(1)+rolling_mean(12) over month-sorted betas (lines 1532-1540), so only _b(t-12..t-1) enter the t-stamped value \u2014 all computable from data through end of t. MA/price ratios depend only on split factors between window days and t (cfacpr ratio), known at t. NYSE-decile and price filters use month-t values. No leak."
+    },
+    {
+      "factor": "UpRecomm",
+      "verdict": "clean",
+      "input_timing": "IBES recommendations stamped time_avail_m = month of anndats (announcement date, IBESRecommendations.py:62); factor at t compares mean rec announced during month t vs the previous observed rec-month \u2014 all announced (public) by end of month t.",
+      "mechanism": "Script: analyst-month last rec -> firm-month mean -> groupby shift(1) lag (UpRecomm.py:29-52); engine identical, additionally sorting by anndats before taking the analyst-month last (engine:1461-1475, 2065-2084). Lag over observed months can reach further back than 1 calendar month \u2014 deeper into the past, harmless. Minor shared caveat: uses anndats rather than actdats (IBES database-entry date), the standard OSAP availability convention."
+    },
+    {
+      "factor": "VarCF",
+      "verdict": "clean",
+      "input_timing": "ib+dp at m_aCompustat datadate+6mo stamp; mve_permco is end-of-month-t market equity; rolling std over the trailing 60 months (min 24) ending at t.",
+      "mechanism": "Script asrol builds a per-permno calendar backbone and applies trailing rolling_std (VarCF.py:49-56; asrol.py:60-97, fill_date_gaps_pl is past-window only); engine rolling_std(60, min 24) on complete monthly template (_op_rolling_std, engine:779-780). Trailing only."
+    },
+    {
+      "factor": "VolMkt",
+      "verdict": "clean",
+      "input_timing": "monthlyCRSP vol/prc/shrout of month t (available end of t); 12-month trailing mean of dollar volume ending at t, divided by month-t market equity.",
+      "mechanism": "Script rolling_mean(12, min 10).over(permno) trailing (VolMkt.py:48-58); engine rolling_mean(12) trailing on calendar template divided by mve_permco at t. Engine's min_obs default (6 vs script's 10) and mve_permco-vs-mve_c denominator are fidelity gaps, not timing leaks."
+    },
+    {
+      "factor": "VolSD",
+      "verdict": "clean",
+      "input_timing": "monthlyCRSP vol of months t-35..t (each available at its own month end); output stamped at t.",
+      "mechanism": "Trailing rolling_std(36, min 24) on both sides (VolSD.py:40-47; engine _op_rolling_std on complete monthly template). Past-only windows."
+    },
+    {
+      "factor": "VolumeTrend",
+      "verdict": "lookahead_confirmed",
+      "input_timing": "monthlyCRSP vol of months t-59..t feeds the trailing regression slope and 60-month mean (both clean); but the script's final trim cutoffs are the 1st/99th percentiles of VolumeTrend pooled over the ENTIRE panel \u2014 all permnos and all months, including decades after t.",
+      "mechanism": "Script side: VolumeTrend.py:79 calls winsor2(df, ['VolumeTrend'], replace=True, trim=True, cuts=[1,99]) with by=None; winsor2.py:122-138/162-170 then computes pl.col(var).quantile(0.01/0.99) over the full dataset and nulls observations outside those full-sample bounds \u2014 so whether a month-t value survives depends on future data (selection-only leak; surviving values are unchanged; inherited from the original Stata 'winsor2 ... trim' without by()). Engine side is clean: _op_rolling_trend_slope_scaled (engine:2584-2599) uses only the trailing 60-month window ending at t and applies no trim."
+    },
+    {
+      "factor": "XFIN",
+      "verdict": "clean",
+      "input_timing": "sstk, dv, prstkc, dltis, dltr, dlcch, at all from one m_aCompustat annual record: fiscal year ends at datadate, values stamped time_avail_m = datadate+6..+17 months (CompustatAnnual.py:212-244). No lags, no market data. Engine tree is the identical same-record ratio on the availability-stamped panel.",
+      "mechanism": "Pure within-record ratio of a single annual statement already carrying the 6-month reporting lag; no cross-time joins on either side (script XFIN.py:46-48; engine div/add/sub/fillna on m_aCompustat vars only)."
+    },
+    {
+      "factor": "cfp",
+      "verdict": "clean",
+      "input_timing": "oancf/ib/act/che/lct/dlc/txp/dp from m_aCompustat at t (statement public \u22656 months before t); 12-month-lagged balance-sheet items fetched via backward calendar self-merge (cfp.py:95-102, lookup key renamed so row t receives t-12); mve_permco from SignalMasterTable/monthlyCRSP at month t itself, i.e. end-of-month-t market equity used at stamp t.",
+      "mechanism": "All self-joins point backward and current-month ME is available by end of month t per convention. Engine side (oancf / monthlyCRSP mve_permco, same-month division) has no lags at all. Note: engine omits the script's accrual-based fallback when oancf is missing \u2014 a value discrepancy, not a timing one."
+    },
+    {
+      "factor": "dNoa",
+      "verdict": "clean",
+      "input_timing": "at, che, dltt, dlc, mib, pstk, ceq from m_aCompustat at t and at t-12; script lag via backward calendar merge (dNoa.py:82-93), engine lag/delta via shift(12) on the ascending availability-stamped monthly panel (p1_factor_engine.py:704-714).",
+      "mechanism": "Both sides difference month-t values against month t-12 values that were themselves available at t-12; denominator is lagged at. No future rows touched. Aside (non-timing): engine operating-liability leg uses derived var dc in place of the script's dlc+pstk and skips the zero-fills \u2014 a spec mismatch but same data vintage."
+    },
+    {
+      "factor": "fgr5yrLag",
+      "verdict": "clean",
+      "input_timing": "IBES fpi=0 meanest stamped time_avail_m = statpers month (forecast summary computed mid-month, public by month end); the value used at June t is the December t-1 forecast obtained via backward 6-month self-merge (script fgr5yrLag.py:89-98; engine p1_factor_engine.py:2436-2440, lag6_date = t-6); Compustat completeness screen at t uses m_aCompustat already lagged \u22656 months; June signal is then held forward into June..May (expansion only pushes old values to later stamps).",
+      "mechanism": "Lag lookup key is renamed so row t pulls the forecast issued at t-6, never the reverse; the 12-month expansion adds offsets 0..+11 so future months carry the old June value, not vice versa. Script and engine implement the same logic."
+    },
+    {
+      "factor": "grcapx",
+      "verdict": "clean",
+      "input_timing": "capx (and ppent for imputation) from m_aCompustat at t and t-24; annual statement public \u22656 months before its first stamped month. Script lags are position-based groupby.shift(12/24/36) on the monthly panel (ZZ1_grcapx...py:101-112) \u2014 with gaps this reaches even OLDER rows, never newer; engine uses calendar shift(24) on the full month index.",
+      "mechanism": "Numerator and denominator both come from statements available at or before t; FirmAge/cumcount and the ppent-based capx imputation use only prior rows. Engine omits the imputation and FirmAge screen (coverage difference, not timing)."
+    },
+    {
+      "factor": "grcapx3y",
+      "verdict": "clean",
+      "input_timing": "Same file/rows as grcapx: capx at t divided by sum of capx at t-12, t-24, t-36; script position-based shifts can only reach equal-or-older calendar months, engine calendar shift(12/24/36) on the availability-stamped panel.",
+      "mechanism": "All three lag legs are strictly backward on both sides; the month-t capx is from a fiscal year ended \u22656 months earlier."
+    },
+    {
+      "factor": "hire",
+      "verdict": "clean",
+      "input_timing": "emp from m_aCompustat at t vs t-12; script backward calendar merge (hire.py:35-42), engine _op_hire_growth shift(12) (p1_factor_engine.py:844-847). Missing emp/lag set to 0 on both sides using only contemporaneous missingness.",
+      "mechanism": "Single backward 12-month lag of an already 6-month-lagged annual field; no market or cross-sectional inputs. Engine omits the year<1965 exclusion \u2014 sample-period difference only."
+    },
+    {
+      "factor": "realestate",
+      "verdict": "lookahead_confirmed",
+      "input_timing": "Ratio inputs (fatb, fatl, ppegt, ppenb, ppenls, ppent, at) from m_aCompustat at t \u2014 clean on both sides. Industry grouping differs: script uses sicCRSP from SignalMasterTable/monthlyCRSP, which CRSPMonthly.py joins from msenames with namedt<=date<=nameendt (point-in-time, known at t); engine uses m_aCompustat 'sic', which CompustatAnnual.py sources from comp.names (CCM_QUERY, line 148) \u2014 a HEADER field holding the company's latest-vintage SIC stamped identically onto every historical month.",
+      "mechanism": "Engine side only: _op_industry_adjusted_mean (p1_factor_engine.py:887-900) forms 2-digit industry demeaning groups at month t from the classification as of the data-download date, so a firm reclassified in, say, 2015 is demeaned against its 2015 industry peers in 1990 \u2014 future classification info leaks into historical group assignment and the >=5-obs industry screen. Script side is clean (point-in-time sicCRSP). Fix: have the engine use sicCRSP (or funda's sich, already downloaded but unused)."
+    },
+    {
+      "factor": "roaq",
+      "verdict": "clean",
+      "input_timing": "ibq at t where t = max(datadate+3 months, rdq month), with rdq>datadate+6mo rows dropped (CompustatQuarterly.py:83-113); atq at t-3 via backward self-merge in the script (roaq.py:44-50) and shift(3) in the engine. Stamping at the rdq month means a mid-month announcement is public before end of month t, which satisfies the stated end-of-month-t availability convention.",
+      "mechanism": "Both sides divide the currently-available quarter's income by assets as they were available three months earlier; all joins backward. Source-level caveats (shared, not implementation bugs): comp.fundq STD is not point-in-time so restated values can overwrite originals, and rows with missing rdq fall back to the datadate+3 assumption unverified."
+    },
+    {
+      "factor": "sfe",
+      "verdict": "clean",
+      "input_timing": "IBES fpi=1 medest/numest with statpers in March, stamped time_avail_m = March (statpers is mid-March, public by month end); prc fetched at prc_time = t-3 = December of the prior year (end-of-December price used three months later \u2014 after December ends); December-FYE filter uses the datadate month of the m_aCompustat record already public at March (a statement from ~15 months earlier); coverage median split is a same-month March cross-section; signal held forward 12 months (March..February).",
+      "mechanism": "Script (sfe.py:29-76) and engine (_op_sfe_signal, p1_factor_engine.py:2446-2472) implement identical timing: the only cross-time joins pull the t-3 price and the already-available accounting record, and the hold-expansion only pushes the March value to later stamps. No December ME used before December; no IBES actuals involved."
+    },
+    {
+      "factor": "std_turn",
+      "verdict": "clean",
+      "input_timing": "vol, shrout, prc from monthlyCRSP for months t-35..t (each available at its own month end); rolling std window ends at t; size quintile/rank uses month-t market equity only. Script rolling is position-based per permno (older-only reach on gaps), engine calendar-based on the full month index.",
+      "mechanism": "Backward rolling window plus same-month cross-sectional size filter \u2014 nothing future-dated on either side. Aside (non-timing): engine _op_size_filtered keeps its default min_tercile=2 because the spec only passes max_quintile=3 (p1_factor_engine.py:825-841), so it also drops the bottom third by size and ranks on mve_permco, unlike the script's quintiles 1-3 on share-class mve_c \u2014 a spec-fidelity bug worth fixing separately."
+    },
+    {
+      "factor": "tang",
+      "verdict": "lookahead_confirmed",
+      "input_timing": "che, rect, invt, ppegt, at from m_aCompustat at t (fiscal year public \u22656 months before t) \u2014 the tang value itself is clean. The manufacturing gate (2000<=sic<=3999) on BOTH sides uses m_aCompustat 'sic', which CompustatAnnual.py's CCM query (line 148) takes from comp.names \u2014 a header table whose sic is the company's most recent classification, replicated across the firm's entire history; the point-in-time sich from funda is downloaded (line 37) but never used.",
+      "mechanism": "Both script (tang.py:35-38 filters on m_aCompustat sic) and engine (_op_manufacturing_only on the m_aCompustat sic panel, p1_factor_engine.py:809-812) decide historical sample membership using the download-date classification: a firm that became a manufacturer in 2010 is included back to the 1970s, and one that left manufacturing is excluded from years when it genuinely qualified. The leak is in universe selection, not the computed value; same-month at-decile FC flags in the script are constructed but never applied. Fix: gate on sich or CRSP's point-in-time sicCRSP."
+    },
+    {
+      "factor": "zerotrade1M",
+      "verdict": "clean",
+      "input_timing": "dailyCRSP vol/shrout stamped at trade date time_d (public at day-end); monthly aggregates (countzero, turn, ndays) for month m are complete at end of month m; factor at time_avail_m=t is the month t-1 aggregate via shift(1).",
+      "mechanism": "Script (ZZ1_zerotrade...py lines 57-60) stamps grouped shift(1) of the prior month's zero-volume/turnover measure, so month t uses only daily data through end of t-1; engine has no native op \u2014 zero_trade_measure is in DELEGATED_SPECIAL_OPERATORS (p1_factor_engine.py:145, 2698-2699, 2726-2730) and delegates to this same script, with standardization (lines 640-664) a pure pivot/reindex with no fills or shifts."
+    },
+    {
+      "factor": "zerotrade6M",
+      "verdict": "clean",
+      "input_timing": "Same dailyCRSP vol/shrout at trade date; 6-month sums built from shift(0..5) of monthly aggregates (months m-5..m), then final shift(1) stamps the factor at t using months t-6..t-1 only.",
+      "mechanism": "Script lines 63-94: rolling 6-month sums of past/current monthly aggregates followed by shift(1) \u2014 value at time_avail_m=t depends solely on daily data through end of month t-1 (older across listing gaps, since shift is positional on the sorted panel \u2014 still past data); engine delegates to the identical script (DELEGATED_SPECIAL_OPERATORS, p1_factor_engine.py:145)."
+    },
+    {
+      "factor": "zerotrade12M",
+      "verdict": "clean",
+      "input_timing": "Same dailyCRSP vol/shrout at trade date; 12-month sums from shift(0..11) of monthly aggregates (months m-11..m), then final shift(1) stamps the factor at t using months t-12..t-1 only.",
+      "mechanism": "Script lines 97-146: 12-month sums of current/past monthly aggregates plus a final shift(1), so the stamped value uses only data available before month t begins; engine side is script-delegated (zero_trade_measure has no native implementation; p1_factor_engine.py:145, 2698-2730), and the CSV-to-parquet standardization introduces no time shift. Minor metadata note: the engine expression declares args (vol, ret) while the script uses (vol, shrout) \u2014 inconsequential for timing since execution delegates to the script."
+    }
+  ]
+}

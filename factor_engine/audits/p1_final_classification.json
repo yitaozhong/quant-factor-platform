@@ -1,0 +1,446 @@
+{
+  "_meta": {
+    "generated": "2026-07-25",
+    "source": "10-agent final residual classification, spot-checked"
+  },
+  "classifications": [
+    {
+      "factor": "AM",
+      "verdict": "closed_pending_register_update",
+      "reasoning": "Measured extra=281,901, missing=0, beyond_tol=0, max=0 exactly equals p1_support_triage.json's documented count of off-SMT extras (engine computes at/mve on the full m_aCompustat x monthlyCRSP grid; AM.py inner-joins SignalMasterTable), with p1_universe_policy.json policy AM=smt_strict giving exact parity at emit. Spot-check: 6/6 sampled extra cells (permno 20749 1958-12, 56610 1995-07, 77155 2003-05, 89854 2011-02, 11845 2018-04, 93429 2024-12) are absent from SignalMasterTable at that month. However, the triage's action cites an 'SMT universe masking family' entry in p1_deviation_register.md that does not exist in the register file.",
+      "next_action": "Add register entry (section A): 'SMT universe emit-mask family (AM, AdExp): engine kernels compute the ratio wherever m_aCompustat and monthlyCRSP inputs exist; the reference scripts inner-join SignalMasterTable, so oracle support additionally requires SMT membership (shrcd 10/11/12, exchcd 1/2/3). Golden native outputs are pre-mask; p1_universe_policy.json applies smt_strict at emit for exact parity. Residuals: AM 281,901 extra-in-native off-SMT cells, AdExp 62,000; missing=0 and joint values bit-identical for both.'"
+    },
+    {
+      "factor": "AbnormalAccruals",
+      "verdict": "closed_pending_register_update",
+      "reasoning": "Measured production residual (beyond_tol=2,459,521 of ~2.6M joint cells, missing=148,567, extra=15,419, max=15.31) is the register's section-B expectation: engine estimates Jones-model coefficients/trim bounds on the PRIOR fiscal year while the oracle estimates in-sample with look-ahead, so 'all residuals differ by construction' ~everywhere \u2014 ~93% of joint support diverging matches that. The REFERENCE_MODE verification claim, however, is stale: Data/golden/refmode_check/AbnormalAccruals.parquet vs oracle measures beyond_tol=327,285, missing=123,740, extra=11,601, max=1.4362744 \u2014 exactly the PRE-patch residual reconciled cell-by-cell in p1_patch_specs.json estimation_kernel_findings (totals reconcile with zero unexplained: 327,424 divergent = 237,302+87,652+1,131+1,339 at exact tolerance; 123,740 = 102,453+18,611+2,676; 11,601 extra all pre-1982 exchcd-null keys). Spot-checks match the findings' documented sample cells bit-for-bit: permno 18163 1971-12 refmode 0.0223928 vs oracle 0.0212062 (BUG 1 polars-nearest vs pandas-linear trim quantile), permno 46834 1972-03 oracle 0.091336/refmode NaN (BUG 5), permno 44185 1971-12 refmode 0.073832/oracle NaN (BUG 6). Nothing is unexplained, so not an open bug \u2014 but 'kernels verified exact in REFERENCE_MODE' is not currently true for AbnormalAccruals; the prescribed kernel_patch has not been applied/regenerated.",
+      "next_action": "Correct the register's AbnormalAccruals note (and any status claim of REFERENCE_MODE exactness): 'AbnormalAccruals production output deliberately differs ~everywhere from the look-ahead oracle (prior-year estimation; 2,459,521 beyond-tol / 148,567 missing / 15,419 extra). REFERENCE_MODE parity is NOT yet exact: refmode_check carries a fully-attributed 327,285/123,740/11,601 residual (polars-nearest trim quantiles, phantom gap rows in the winsor population, unlimited forward-fill / 13-month end padding, _Nobs semantics, SMT-vs-CRSP exchcd, pivot stamp-conflict resolution) with the corrective kernel patch specified in p1_patch_specs.json estimation_kernel_findings, pending application and refmode regeneration.'"
+    },
+    {
+      "factor": "Accruals",
+      "verdict": "closed_registered_deviation",
+      "reasoning": "Measured missing=15,359, extra=0, beyond_tol=0, max=0 exactly equals the register's documented residual in both the 'Accruals' section-A entry ('~15.4k cells where the oracle emits stale-lag values the engine correctly leaves NaN') and the 'Accruals, ChEQ, DolVol \u2014 calendar vs positional lags' entry, which records precisely 'Accruals 15,359 missing-in-engine cells' with values bit-identical on joint support. p1_support_triage.json additionally documents 10/10 sampled oracle-only cells as positional gap-lag bridges (e.g. permno 76928 2021-08 differenced against 1992-08). Exact count match to the registered number \u2014 numerically obvious.",
+      "next_action": "None \u2014 register entry is current and exact (15,359)."
+    },
+    {
+      "factor": "AccrualsBM",
+      "verdict": "closed_pending_register_update",
+      "reasoning": "Measured beyond_tol=0, missing=532, extra=740, max=0 is exactly the residual family p1_support_triage.json predicted after its support fix ('Residual after the fix is the calendar-vs-positional tempacc lag family \u2014 script shift(12) over the SMT right-join panel \u2014 add AccrualsBM to the existing calendar-vs-positional register entry with re-measured counts'); the pre-fix residual (16,779 missing / 31,139 extra from off-SMT emission and _row_bucket binning) is gone, confirming the fix landed. Spot-checks (10 sampled cells, both replicas rebuilt from m_aCompustat/SignalMasterTable with fastxtile): a script-faithful positional-shift replica reproduces the ORACLE at every sampled missing cell (41558 1972-12 -> 1.0, 30526 1986-10 -> 1.0, 71117 1993-01 -> 0.0, 83861 2001-04 -> 1.0) and NaN at every sampled extra, while an engine-faithful calendar-lag replica (full-grid t-12cal lags, SMT cross-section) reproduces the NATIVE at all of them (14509 1969-06 -> 1.0, 43183 1984-06 -> 0.0, 14795 1992-08 -> 1.0, 87491 2001-06 -> 1.0, 75581 2006-08 -> 0.0, 19129 2024-01 -> 1.0). Mechanism is the single lag-semantics difference expressed two ways: directly (calendar t-12 row absent, positional lag bridges the gap, e.g. 32687 2006-07 positional lag lands 1984-07) and indirectly (stale-lag tempacc cells shift the month's fastxtile quintile breakpoints, flipping boundary cells, e.g. 41558 1972-12 qAcc 1 under script population vs 2 under engine population for the identical tempacc value -0.027543).",
+      "next_action": "Add AccrualsBM to the calendar-vs-positional register family: 'AccrualsBM \u2014 calendar vs positional 12-month tempacc lags over the SMT right-join panel (residual). Engine computes working-capital accruals with calendar t-12 lags on the m_aCompustat grid, buckets BM and accruals into per-month fastxtile quintiles over SMT rows; reference AccrualsBM.py shifts positionally over the SMT right-join panel, so across listing/coverage gaps its tempacc uses stale lags \u2014 producing both direct residuals (oracle values where no calendar t-12 exists) and indirect fastxtile breakpoint flips on boundary cells whose own inputs are identical. Measured residual: 532 missing-in-native + 740 extra-in-native, 0 value differences on joint support.'"
+    },
+    {
+      "factor": "AdExp",
+      "verdict": "closed_pending_register_update",
+      "reasoning": "Measured extra=62,000, missing=0, beyond_tol=0, max=7.3e-12 (within tolerance) exactly equals p1_support_triage.json's documented count ('all 62,000 residual cells are extras, eliminated exactly by the smt_strict mask'), same SMT inner-join footprint as AM, covered by p1_universe_policy.json AdExp=smt_strict at emit. Spot-check: 6/6 sampled extra cells (53372 1973-05, 75400 1995-01, 90087 2005-06, 91942 2012-01, 17150 2018-12, 93314 2024-12) are absent from SignalMasterTable at that month. As with AM, the 'SMT universe masking family' register entry the triage cites does not exist in p1_deviation_register.md.",
+      "next_action": "Cover in the same new register entry as AM: 'SMT universe emit-mask family (AM, AdExp): ... AdExp 62,000 extra-in-native off-SMT cells, missing=0, joint values identical to float32 precision (max abs diff 7.3e-12).'"
+    },
+    {
+      "factor": "AnalystRevision",
+      "verdict": "closed_registered_deviation",
+      "reasoning": "Measured missing=127, extra=0, beyond_tol=0, max=0 exactly equals the spec's expected_residual in p1_patch_specs.json ('0 divergent both-valued cells; ~127 miss cells where the positional prev-SMT-row lag crosses a listing gap') and the register's 'AnalystRevision (final)' entry (exactly 127 cells, values bit-identical everywhere both emit). Spot-check: 5/5 sampled missing cells sit exactly at post-SMT-gap months (smt@t=True, smt@t-1=False): permno 17347 1982-08 (the register's own proof cell, oracle=3.0), 20670 2001-06, 87349 2007-07, 91612 2014-04, 13939 2024-12.",
+      "next_action": "None \u2014 register entry is current and exact (127)."
+    },
+    {
+      "factor": "AssetGrowth",
+      "verdict": "closed_registered_deviation",
+      "reasoning": "Measured missing=15,556, extra=0, beyond_tol=0, max=0. The 15,556 missing cells exactly match the register's AssetGrowth entry ('15,556 oracle cells, 400/400 sampled confirmed as gap-bridges' from positional shift(12) across m_aCompustat gaps). extra=0 confirms p1_support_triage.json's needs_support_fix was applied: the 30 previously-measured native inf cells at at(t-12cal)==0 (e.g. permno 82716 2000-06) are gone, so the engine now honors the ZERO_TO_NULL guard the register entry already claims ('NaN, not inf, when at_{t-12}==0'). Register text and measured residual now agree exactly.",
+      "next_action": "None \u2014 register entry is current and exact (15,556 missing, zero-guard adopted)."
+    },
+    {
+      "factor": "BM",
+      "verdict": "closed_registered_deviation",
+      "reasoning": "Measured beyond_tol=1,436, extra=1,036, missing=0 exactly equals both the register entry ('1,436 differing cells + 1,036 support cells, gappy firms only') and the p1_patch_specs.json expected_residual ('Positional-lag deviation of ~1,436 both-valued cells; oracle = stale positionally-frozen market equity at/after SMT listing gaps'). Spot-check: sampled divergent cell permno 26569 1969-06 gives native=-0.019711 / oracle=0.336218 \u2014 bit-for-bit the spec's documented proof cell (script positional shift(6) misses the datadate match across the May-1969 SMT gap and carries stale frozen ME=188.104 -> oracle 0.336218; engine calendar match uses mve(1968-12) -> -0.019711). max=4.03 is a value-difference magnitude on these stale-frozen-ME cells, consistent with log-BM under a wrong frozen denominator.",
+      "next_action": "None \u2014 register entry is current and exact (1,436 + 1,036)."
+    },
+    {
+      "factor": "BMdec",
+      "verdict": "closed_pending_register_update",
+      "reasoning": "Measured extra=318,101, missing=0, beyond_tol=0, max=0 exactly equals p1_support_triage.json's mechanism-B count (Dec-ME merged-row-presence lookup failures), and the disappearance of mechanism A's 157,516 no-CRSP-row extras confirms the prescribed crsp_only output mask was applied (pre-fix total was 475,617). Spot-check: 6/6 sampled extra cells (10516 1950-12, 60311 1981-01, 76011 1990-10, 83155 1997-10, 91179 2008-03, 92966 2024-12) all have a monthlyCRSP row at t and an m_aCompustat row at t, but NO m_aCompustat (hence no merged-panel) row at the script's t-12/t-17 lag month even though the CRSP December row for the lag year exists \u2014 exactly the script's lookup-implementation artifact (BMdec.py fetches tempDecME only from a merged-panel row at the exact lag month). Triage marked the register entry as still needed; the register has no BMdec entry.",
+      "next_action": "Add the triage's drafted register entry: 'BMdec: engine computes BE(t)/DecME(prior calendar year) with December market equity taken from the CRSP December row and lagged 12/17 calendar months, output masked to monthlyCRSP row presence. Reference BMdec.py fetches DecME by merging on a t-12/t-17 row of the m_aCompustat x CRSP inner panel and computes tempDecME only on merged rows, so it drops firm-months where the December ME exists in CRSP but the firm lacks a merged row at exactly the lag month or lacks Compustat coverage in the lag-year December. The reference is wrong: Fama-French Ln(BE/ME) requires only current book equity and the prior December price/shares; the merged-row-presence requirement is a lookup-implementation artifact. Measured residual: 318,101 engine-only cells (all with a CRSP row at t) retained by design; missing=0; values bit-identical wherever both sides emit.'"
+    },
+    {
+      "factor": "BPEBM",
+      "verdict": "closed_registered_deviation",
+      "reasoning": "Measured: extra=278,434, missing=0, beyond_tol=0, max=0. Expected per p1_support_triage.json BPEBM entry: exactly 278,434 extra-in-native cells, all outside the SignalMasterTable universe (script builds on SMT; engine emits grid-wide), missing=0 \u2014 exact count match. p1_universe_policy.json declares BPEBM=smt_strict (mask applied at emit time), so the pre-emit golden grid is expected to carry these extras. Spot-check: 6/6 randomly sampled extra cells (e.g. permno 85260 1998-07, permno 12352 2012-08, permno 18261 2019-12) are absent from SignalMasterTable.parquet, and joint values agree bit-exactly (beyond_tol=0).",
+      "next_action": "None required \u2014 residual is fully documented in p1_support_triage.json and p1_universe_policy.json (smt_strict emit-time mask, SMT-universe-masking family)."
+    },
+    {
+      "factor": "CF",
+      "verdict": "closed_registered_deviation",
+      "reasoning": "Measured: extra=281,901, missing=0, beyond_tol=0, max=0. Expected per p1_support_triage.json CF entry: exactly 281,901 extras on the same m_aCompustat x monthlyCRSP row structure as AM (script inner-joins SMT; engine emits on the unfiltered grid), missing=0 \u2014 exact match. Spot-check: 6/6 randomly sampled extra cells (e.g. permno 87344 2015-11, permno 77239 2022-01) are not in SignalMasterTable; joint values bit-identical.",
+      "next_action": "None required \u2014 residual documented in p1_support_triage.json and covered by p1_universe_policy.json CF=smt_strict (emit-time SMT mask)."
+    },
+    {
+      "factor": "Cash",
+      "verdict": "closed_registered_deviation",
+      "reasoning": "Measured: beyond_tol=84, extra=2,285, missing=0, max=0.3350842. Expected per p1_deviation_register.md 'Cash' entry (already extended per the p1_patch_specs.json bookkeeping instruction): (a) 2,285 engine-only cells from retained singleton (gvkey, rdq) announcements the script's dup==1 dedup silently drops, and (b) 84 value-shift cells (max ~0.335) where a retained singleton announcement (newest rdq) overrides an older announcement window; 0 missing-in-native. All three counts and the max match exactly; p1_patch_specs.json confirms 'the entire residual is the retained-singleton deviation' with sampled proofs (permno 48397 1974-05, permno 44580 1972-02).",
+      "next_action": "None required \u2014 the register's Cash entry already covers both the 2,285 extras and the 84 value-shift cells with the correct max (~0.335)."
+    },
+    {
+      "factor": "CashProd",
+      "verdict": "closed_registered_deviation",
+      "reasoning": "Measured: extra=281,901, missing=0, beyond_tol=0, max=0. Expected per p1_support_triage.json CashProd entry: exactly 281,901 SMT-universe extras (script CashProd.py L70 inner-joins SignalMasterTable; engine computes (mve_permco-at)/che on the wider grid), with the triage's full-population check showing 0 of 281,901 extras in SMT; missing=0 so the script's unguarded che==0 inf creates no residual. Spot-check: 6/6 randomly sampled extra cells (e.g. permno 17136 1969-01, permno 58836 2020-03) are absent from SignalMasterTable.",
+      "next_action": "None required \u2014 residual documented in p1_support_triage.json and covered by p1_universe_policy.json CashProd=smt_strict."
+    },
+    {
+      "factor": "ChAssetTurnover",
+      "verdict": "closed_registered_deviation",
+      "reasoning": "Measured: missing=12, extra=0, beyond_tol=0, max=0. Expected per p1_deviation_register.md 'ChAssetTurnover' entry: exactly 12 cells where the script emits inf ChAssetTurnover from a zero average-net-operating-assets denominator (e.g. permno 11460 1991-04) and the engine deliberately yields NaN. Spot-check: enumerated all 12 missing cells in the golden data \u2014 every one is permno 11460, months 1991-04 through 1992-03, oracle=inf vs native=NaN, matching the register's example cell precisely. The 13,508 ppent-ffill missing cells flagged in p1_support_triage.json (needs_support_fix) are gone, confirming the FFILL tree fix was applied; only the registered inf-to-NaN deviation remains.",
+      "next_action": "None required \u2014 the register entry already states the exact 12-cell inf-to-NaN residual with the permno 11460 1991-04 example."
+    },
+    {
+      "factor": "ChEQ",
+      "verdict": "closed_registered_deviation",
+      "reasoning": "Measured: missing=11,817, extra=0, beyond_tol=0, max=0. Expected per p1_deviation_register.md section 'Accruals, ChEQ, DolVol \u2014 calendar vs positional lags (residual support)': ChEQ 11,817 missing-in-engine cells with values bit-identical on joint support \u2014 exact count match, and p1_support_triage.json confirms 10/10 sampled missing cells have an m_aCompustat row at t but none at calendar t-12 (script's positional shift(12) lands 13-48+ months back, e.g. permno 19289 1987-04 lagged against 1983-04). Count and shape (missing-only, zero value divergence) match the register exactly.",
+      "next_action": "None required \u2014 register count (11,817) is current and exact."
+    },
+    {
+      "factor": "ChInv",
+      "verdict": "closed_registered_deviation",
+      "reasoning": "Measured: missing=15,586, extra=0, beyond_tol=0, max=0. Expected per p1_deviation_register.md 'ChInv' entry: 'The 15,586 across-gap oracle cells are masked as oracle_artifact in reconciliation' \u2014 exact count match; residual shape (missing-only, joint values bit-identical) matches the documented positional-vs-calendar-lag family (p1_support_triage.json: 10/10 sampled cells have no m_aCompustat row at calendar t-12, script's shift(12) lands 13-108 months back, e.g. permno 68056 1991-07 lagged against 1982-07).",
+      "next_action": "None required \u2014 register count (15,586) is current and exact."
+    },
+    {
+      "factor": "ChNNCOA",
+      "verdict": "closed_registered_deviation",
+      "reasoning": "Measured: missing=15,252, extra=0, beyond_tol=0, max=0. Expected per p1_deviation_register.md 'ChNNCOA' entry: 'The 15,252 across-gap oracle cells are masked as oracle_artifact' \u2014 exact count match; shape (missing-only, zero value divergence) matches the documented calendar-vs-positional lag deviation (p1_support_triage.json: 10/10 sampled cells lack a calendar t-12 m_aCompustat row, oracle shift(12) landing 13-240 months back, e.g. permno 22947 1983-01 differenced against 1963-01).",
+      "next_action": "None required \u2014 register count (15,252) is current and exact."
+    },
+    {
+      "factor": "ChTax",
+      "verdict": "closed_registered_deviation",
+      "reasoning": "Measured: beyond_tol=175, missing=4,867, extra=1,824, max=0.0327632. Expected per p1_deviation_register.md 'ChTax \u2014 gvkey-keyed vs permno-keyed 12-month lags (residual)' (the already-CORRECTED entry replacing the earlier wrong positional-lag description): 175 differing cells (max ~0.0328) + 4,867 missing-in-native + 1,824 extra-in-native, all gvkey-link-churn cells \u2014 all three counts and the max match exactly. p1_patch_specs.json verified the mechanism with recomputed proofs for each class: (a) permno 55212 1999-06 (gvkey change within 12m: oracle 0.0129683 vs native 0.0374405), (b) permno 90898 2006-07 / 60442 1984-10 (gvkey continuous, permno changed \u2014 t-12 row sits on the other permno's column), (c) permno 75034 2018-06 (engine lags through the old gvkey, native -0.0069875).",
+      "next_action": "None required \u2014 the register's corrected ChTax residual entry carries the exact measured counts and mechanism; the bookkeeping fix requested by p1_patch_specs.json has already been applied."
+    },
+    {
+      "factor": "ChangeInRecommendation",
+      "verdict": "closed_registered_deviation",
+      "reasoning": "Measured beyond_tol=55, missing=0, extra=0, max=2 matches p1_patch_specs.json expected_residual verbatim ('55 value cells (max abs 2); 0 missing / 0 extra after the SMT-mapping patch') and the register entry ('Affects ~55 cells (max abs diff 2)'). Spot-check: the registered HAL proof cell (permno 23819, 1999-03) shows native 0.45 vs oracle 0.25 in the golden parquets \u2014 the anndats-sorted vs file-order .last() artifact exactly as documented.",
+      "next_action": "None \u2014 register section A 'ChangeInRecommendation' already covers the residual with correct counts."
+    },
+    {
+      "factor": "CompositeDebtIssuance",
+      "verdict": "closed_registered_deviation",
+      "reasoning": "Measured missing=19,518 with 0 value divergence and 0 extras matches expected_residual exactly ('19,518 missing-in-native cells where the oracle's groupby.shift(60) fallback bridges panel gaps; 0 value divergence, inf cells match sign-for-sign'). The register entry already carries the verified 19,518 count (the spec's note about a stale ~244,731 register count is itself outdated \u2014 the register was updated). Spot-check: proof cell (permno 43618, 1993-04) is oracle 2.3909144 / native NaN in the golden data, the documented 68-month positional-fallback bridge.",
+      "next_action": "None \u2014 register section A 'CompositeDebtIssuance' already states the 19,518 positional-fallback residual."
+    },
+    {
+      "factor": "DebtIssuance",
+      "verdict": "closed_registered_deviation",
+      "reasoning": "Measured missing=358,000, extra=0, beyond_tol=0 matches the register's '~358k firm-months' NaN-to-0 fill deviation; the triage's separate 669,237-extras defect (missing SMT/shrcd/BM gates) has collapsed to 0, confirming the support fix landed. Spot-check: 300/300 randomly sampled missing cells have oracle value exactly 0.0 \u2014 the signature of DebtIssuance.py:54 coding unreported dltis as a non-issuer \u2014 and native NaN per the engine's NaN-discipline indicator.",
+      "next_action": "None \u2014 register section A 'DebtIssuance' already documents the NaN-to-0 fill cells as oracle_artifact."
+    },
+    {
+      "factor": "DelCOA",
+      "verdict": "closed_registered_deviation",
+      "reasoning": "Measured missing=15,586, extra=0, beyond_tol=0 equals the register entry's count exactly ('The 15,586 across-gap oracle cells are masked as oracle_artifact') and the triage verdict covered_by_existing_register_entry (10/10 sampled cells were positional gap-bridges). Spot-check: triage proof cell (permno 39731, 1996-04) is oracle 0.11951026 / native NaN in the golden data.",
+      "next_action": "None \u2014 register section A 'DelCOA' already covers the 15,586-cell positional-lag residual."
+    },
+    {
+      "factor": "DelCOL",
+      "verdict": "closed_pending_register_update",
+      "reasoning": "Measured missing=15,359, extra=0, beyond_tol=0 equals the drafted count exactly (and matches the shared Accruals act/lct coverage footprint as the triage predicted). Spot-check: draft-entry proof cell (permno 89986, 2023-03) is oracle 0.43191883 / native NaN \u2014 the 14-year gap-bridge documented in the draft. The entry exists in p1_deviation_register.md but only as quoted text wrapped in 'Draft register entry (section A): ...'; it needs to be finalized as a normal entry.",
+      "next_action": "Finalize the register entry (strip the 'Draft register entry (section A):' wrapper and quoting): '### DelCOL \u2014 engine computes ((lct-dlc)_t - (lct-dlc)_{t-12cal}) / (0.5*(at_t + at_{t-12cal})) with strict calendar lags; reference DelCOL.py:64-66 uses positional groupby.shift(12) on deduped m_aCompustat rows, so across coverage gaps the lagged lct/dlc/at come from 13 months to 14+ years earlier (e.g. permno 89986 2023-03 differenced against 2009-03; miss mask matches Accruals' 15,359-cell coverage footprint). Correct definition: NaN whenever no observation exists exactly 12 calendar months prior. The 15,359 across-gap oracle cells are masked as oracle_artifact.'"
+    },
+    {
+      "factor": "DelDRC",
+      "verdict": "closed_pending_register_update",
+      "reasoning": "Measured missing=1,884, extra=0, beyond_tol=0 equals the drafted count exactly; the triage's separate 2,786,464-extras defect (missing Prakash-Sinha sample filters) has collapsed to 0, confirming the deldrc_sample_filter fix landed. Spot-check: draft-entry proof cell (permno 81575, 2011-05) is oracle 0.07315935 / native NaN \u2014 the 12-year positional gap-bridge. Like DelCOL, the entry sits in the register only as quoted 'Draft register entry' text.",
+      "next_action": "Finalize the register entry (strip the draft wrapper): '### DelDRC \u2014 calendar vs positional 12-month lag (residual support) \u2014 Same family as DelCOA/ChInv: reference DelDRC.py:70-71 lags drc/at via positional groupby.shift(12) over deduped m_aCompustat rows, so across coverage gaps the annual change in deferred revenue is differenced against data 13 months to 12+ years old (sampled: permno 81575 2011-05 vs 1999-05). Engine uses strict calendar t-12 lags and emits NaN when no m_aCompustat observation exists exactly 12 calendar months prior. The 1,884 across-gap oracle cells are masked as oracle_artifact.'"
+    },
+    {
+      "factor": "DivYieldST",
+      "verdict": "closed_pending_register_update",
+      "reasoning": "Measured extra=24,624, missing=420, beyond_tol=75 (max 3) vs the spec's expected_residual estimate of '~O(hundreds)' \u2014 the counts are two orders larger than estimated, so I sampled extensively: 500/500 sampled extras are exactly native 0.0, and 199/200 position checks show the cell sits at/just before the start of the oracle's support run for that permno (oracle first obs 1-12 months AFTER the extra, none before) \u2014 the engine's calendar shift(2/5/11) over the 0-filled SMT-masked grid yields Edy1=0 -> DivYieldST=0 on the first eligible months, while the script's positional shift over div12>0-FILTERED rows yields NaN there and drops the row (shift(5)/shift(11) branches explain the up-to-12-month lead-ins). 10/10 sampled missing cells are gap-bridges (native support resumes months-to-years later, e.g. permno 10902 1996-10 with native prev 1988-07), where the script's filtered-row shift reaches pre-gap dividends. The 75 value cells are one-tercile (3v2, 2v1) and 0-vs-tercile qcut-boundary flips (max 3), matching the spec's predicted flip class. This is precisely the deviation the kernel patch registered ('calendar window on the month grid \u2014 registered deviation vs the script's 12-SMT-row positional window' plus filtered-row shifts) \u2014 the mechanism matches, only the spec's magnitude estimate was wrong, and no DivYieldST entry exists in p1_deviation_register.md at all.",
+      "next_action": "Add register entry (section A): '### DivYieldST \u2014 calendar vs filtered-positional lags (residual). Engine computes div12 as a calendar rolling(12, min 1) sum of 0-filled SMT-masked dividends and the Ediv1 lags (shift 2/5/11 by cd3 payment frequency) on the calendar month grid; reference DivYieldST.py L81-102 computes rolling(12) positionally over SMT rows and shift(2/5/11) positionally over the div12>0-FILTERED rows. Consequences: (a) 24,624 engine-only cells, all valued 0.0, at the first eligible months of each dividend run \u2014 the calendar lag sees a genuine no-dividend month (Edy1=0 -> DivYieldST=0) where the script's filtered-row shift has no prior filtered row and drops the observation; (b) 420 oracle-only cells at eligibility gaps where the script's filtered-row shift bridges to pre-gap dividends the calendar lag correctly treats as absent; (c) 75 both-valued cells (max 3): qcut-tercile boundary flips (3v2/2v1) and 0-vs-tercile flips at the Edy1==0 boundary induced by the same lag differences shifting the per-month ranking universe. All are the registered lag-semantics deviation; the patch-spec estimate of ~O(hundreds) was low.' Also correct p1_patch_specs.json's DivYieldST expected_residual to these measured counts."
+    },
+    {
+      "factor": "DolVol",
+      "verdict": "closed_pending_register_update",
+      "reasoning": "Measured extra=30,177, missing=0, beyond_tol=0 exactly matches the later register family line ('DolVol 30,177 engine-only cells (raw-CRSP universe, no SMT filter in its script)') and the triage's covered_by_existing_register_entry (300/300 extras are calendar-lag emissions 1-2 months into listing gaps/delistings; joint values bit-identical). Spot-check: extras (10997, 1926-03) and (13514, 1926-04) are isolated native-only months, and native cell (13020, 1926-04) = -inf \u2014 which proves the OLDER standalone register entry (claiming the engine emits NaN instead of the oracle's 10,079 log(0)=-inf sentinels) is stale: the engine now keeps -inf like the oracle (missing=0 confirms no -inf/NaN mismatch remains), consistent with the 'DolVol pattern: keep unguarded' lesson cited by CompositeDebtIssuance's spec.",
+      "next_action": "Update register section A '### DolVol' (the standalone entry): mark the -inf -> NaN deviation as WITHDRAWN/superseded \u2014 the engine now leaves the log unguarded and emits -inf where lagged dollar volume is 0, bit-identical to the oracle's 10,079 sentinel cells. Sole remaining residual is the 30,177 engine-only cells from calendar LOG(LAG(vol*|prc|,2)) on the wide grid emitting into months with no monthlyCRSP row (positional shift(2) in the script), already covered by the 'Accruals, ChEQ, DolVol \u2014 calendar vs positional lags' family entry."
+    },
+    {
+      "factor": "DownRecomm",
+      "verdict": "closed_registered_deviation",
+      "reasoning": "Measured beyond_tol=14, missing=0, extra=0, max=1 matches expected_residual verbatim ('14 both-valued cells remain... Extras and misses go to 0') and the register entry ('14 oracle cells differ and are script sort-order artifacts'). Spot-check: the registered DANB proof cell (permno 81695, 2002-05) is native 1.0 vs oracle 0.0 in the golden data \u2014 file-order .last() picking the older 2002-05-20 rec vs the engine's chronological 2002-05-31 rec, a 0/1 indicator flip consistent with max=1.",
+      "next_action": "None \u2014 register section A 'DownRecomm' already covers the 14 file-order artifact cells with correct counts."
+    },
+    {
+      "factor": "EBM",
+      "verdict": "closed_registered_deviation",
+      "reasoning": "Measured extra=278,434 / beyond_tol=0 / missing=0 equals the triage-documented residual exactly (p1_support_triage.json EBM: 278,434 extras, 300/300 sampled outside SMT). p1_universe_policy.json sets EBM='smt_strict' and p1_validation.py:455-458 states golden natives are DELIBERATELY frozen unmasked, with the policy mask applied at diff/emit time. Spot-check: all 6 sampled extra cells (permno 12093 2020-02, 90201 2009-05, 14183 2019-10, 86403 1999-07, 84138 1998-10, 87094 2003-08) have zero SignalMasterTable rows, so the emit-time SMT mask removes them and parity is exact (joint support 2,924,782 cells, 0 value diffs).",
+      "next_action": "None required \u2014 residual is fully covered by p1_universe_policy.json (EBM='smt_strict', applied at emit) and the triage entry; the golden-native file is unmasked by design."
+    },
+    {
+      "factor": "EarnSupBig",
+      "verdict": "open_bug",
+      "reasoning": "Spec expected the 1.36M divergent cells to collapse to O(10^3-10^4) small-magnitude cells; measured beyond_tol=1,623,176 (~70% of the 2.34M joint cells, max 15.08) \u2014 the residual shape does NOT match. Misses/extras did collapse (18/0) but the value divergence did not.",
+      "next_action": "Suspected mechanism (proven on a sampled cell): the engine computes the surprise zscore on the UNMASKED full quarterly panel with calendar lags and applies smt_only only to the zscore OUTPUT (p1_factor_specs.py:1075-1078: smt_only wraps seasonal_surprise_zscore, not q_epspx), while EarnSupBig.py computes GrTemp/Drift/SD with positional groupby.shift over the SMT-gvkey INNER-JOIN rows; any big firm whose zscore differs shifts the industry-month big mean, which is broadcast to every sub-70th-percentile member. Sampled proof: permno 22198 FF48=45 1985-12 (native -0.10494, oracle -0.11518) \u2014 replicating the script over the industry's 36 big firms reproduces the oracle big-mean EXACTLY (-0.11518186), and 3 big firms differ under engine semantics: permno 29962 script_z=1.750 vs engine_z=0.462, permno 63845 0.696 vs 2.250, permno 71651 script NaN vs engine 0.025 (unmasked-input signature: engine finds lags the merged panel lacks). The 18 missing cells (e.g. permno 59467 2002-03 oracle=-7.11) are the same industry-mean family. Fix: mask q_epspx to the SMT merged panel BEFORE the zscore (as EarningsSurprise's spec does), then re-measure; the small positional-lag remainder would fall into the registered calendar-vs-positional family. Also inherits the EarningsSurprise one-pass-variance knife-edge (see that factor)."
+    },
+    {
+      "factor": "EarningsSurprise",
+      "verdict": "open_bug",
+      "reasoning": "Spec expected near-exact with a tiny residual from rare gvkey-LINKAGE disagreements. Measured 143 extras are NOT linkage cells: sampled extras have identical gvkeys on both sides (e.g. permno 10994 gvkey 12828 in both SMT and m_aCompustat) and carry garbage magnitudes 8.9e6 to 1.5e9 \u2014 a different, undocumented mechanism, so the residual shape does not match the documented expectation.",
+      "next_action": "Suspected mechanism (proven on 3 sampled cells): catastrophic cancellation in the engine's one-pass variance, (hist_sumsq - hist_sum^2/n)/(n-1) at p1_factor_engine.py:1747, defeats the script's SD>1e-10 sanity guard. At near-constant surprise histories the true SD is ~1e-17 (pandas two-pass std; script line 91 drops the cell), but the engine's one-pass formula returns float-noise SD of ~3e-10 to 2e-9, passes the sd>1e-10 check at p1_factor_engine.py:1753, and emits surprise/noise. Sampled proof reproduces golden natives exactly: permno 10994 1989-03 SD_pandas=7.8e-18 vs SD_engine=3.29e-10 -> ES/SD = 3.23947e8 = native 323946720.0; permno 92949 2012-04 SD_pandas=1.4e-17 vs SD_engine=1.86e-9 -> -1.46924e9 = native -1469236736.0; permno 73446 1983-10 SD_pandas=1.4e-17 vs SD_engine=1.86e-9 -> 8.94785e6 = native 8947849.0 (all 6 sampled extras have |value|>=8.9e6, same signature). Fix: compute the variance with a numerically stable two-pass/centered formula in _op_seasonal_surprise_zscore so the sd>1e-10 guard fires as the script's does."
+    },
+    {
+      "factor": "ExchSwitch",
+      "verdict": "closed_registered_deviation",
+      "reasoning": "Register entry 'ExchSwitch \u2014 calendar vs positional 12-month exchcd lookback' predicts a one-directional native=0 vs oracle=1 residual on post-gap relisting cells. Measured: 1,899 diff cells, verified ALL 1,899 are native=0/oracle=1 and 0 are native=1/oracle=0; missing=extra=0; max=1. Spot-checks (3/3): permno 82716 2004-04 relists on AMEX (exchcd=2) after a gap since 1996-09 with pre-gap NASDAQ exchcd=3; permno 77683 2003-06 (gap 1999-02 -> 2003-02, pre-gap exchcd=3); permno 65824 1984-01 (gap 1973-01 -> 1983-11, pre-gap exchcd=3) \u2014 in each, the script's positional shift(1..12) reaches exchcd=3 observations more than 12 calendar months back while the engine's calendar window sees NaN.",
+      "next_action": "Optional precision improvement only: append the measured count to the existing register entry \u2014 'Measured residual: 1,899 cells, all native=0 vs oracle=1 (verified one-directional), max diff 1.'"
+    },
+    {
+      "factor": "ExclExp",
+      "verdict": "closed_pending_register_update",
+      "reasoning": "Measured beyond_tol=44,955 of 1,772,217 joint cells = 2.54%, matching the registered '~2.4% of cells (the tails)' point-in-time-clipping deviation, and matching the spec's expected residual (only the look-ahead clipping deviation remains; the 196,791 extras / 196 missing vanish \u2014 measured missing=0, extra=0). Spot-check (6/6 sampled): every oracle value sits exactly at the documented full-sample clip bounds \u2014 2.700000047683716 (4 cells, e.g. permno 84007 2022-05 native=3.8796) or -1.809999942779541 (2 cells, e.g. permno 10933 2023-04 native=-4.5698) \u2014 vs the engine's within-month 1%/99% clips; max diff 7.40 is a deep-tail cell. However the register entry still says 'Other diagnosed issues (fiscal-quarter alignment of int0a vs epspiq) remain open' \u2014 stale, since support is now exact.",
+      "next_action": "Update register entry 'ExclExp \u2014 point-in-time clipping': replace the stale 'Other diagnosed issues (fiscal-quarter alignment of int0a vs epspiq) remain open' with: 'Fiscal-quarter alignment resolved (0 missing / 0 extra support cells). Sole residual: 44,955 cells (2.5% of 1,772,217 joint cells, max abs diff 7.40) where the reference clips at full-sample bounds (-1.81, 2.70) and the engine clips at each month's 1%/99% \u2014 the registered look-ahead deviation; interior cells match exactly.'"
+    },
+    {
+      "factor": "GP",
+      "verdict": "closed_registered_deviation",
+      "reasoning": "Measured missing=19,967 / extra=26,868 / beyond_tol=0 matches the register verbatim: section 'B. GP, tang \u2014 point-in-time industry classification' records 'joint values bit-identical; support differs by 19,967/26,868 cells (GP)'. The triage additionally sampled 10 missing (header sic non-financial but historical sich financial) and 10 extra (header sic financial, sich non-financial), confirming pure universe-membership flips from the point-in-time sich screen. Counts are exact and values bit-identical on 2,882,924 joint cells \u2014 numerically obvious match, no further spot-check required.",
+      "next_action": "None \u2014 register section B (GP, tang \u2014 point-in-time industry classification) and the 'GP [lookahead_confirmed]' audit entry already record this residual with the exact counts."
+    },
+    {
+      "factor": "GrAdExp",
+      "verdict": "closed_pending_register_update",
+      "reasoning": "Measured missing=2,739 / extra=0 / beyond_tol=0. The triage predicted that after the size-screen support fix the residual would be the ~2,404 gap-lag oracle-only cells of the calendar-vs-positional family (and directed extending that register family entry to name GrAdExp \u2014 which was never done). Measured count 2,739 is the same family with a stale predicted number: all support-fix classes (63,702 non-SMT + 10,855 decile-boundary + 4,320 extras) vanished. Spot-check (6/6 sampled missing cells): every cell has an m_aCompustat row at t but NO row at calendar t-12, while the script's positional shift(12) reaches 14 months to 19 years back \u2014 e.g. permno 10517 2011-06 lags to 1992-09, permno 78447 2013-09 to 2006-06, permno 47191 1987-02 to 1985-06.",
+      "next_action": "Extend the register family entry 'Accruals, ChEQ, DolVol \u2014 calendar vs positional lags (residual support)' to name GrAdExp: 'GrAdExp 2,739 missing-in-engine cells (oracle-only): the script's positional shift(12) over gappy m_aCompustat supplies a stale xad base (sampled up to 19 years old, e.g. permno 10517 2011-06 lagged to 1992-09) where no calendar t-12 row exists; engine correctly NaN. 0 extras, 0 value diffs; the previously predicted 2,404 count was a pre-support-fix simulation.'"
+    },
+    {
+      "factor": "GrLTNOA",
+      "verdict": "closed_registered_deviation",
+      "reasoning": "Measured missing=15,333 / extra=0 / beyond_tol=0 matches the register's GrLTNOA entry verbatim ('15,333 oracle-only cells are dropped as artifacts; zero extras; all shared cells match to 0 abs error') and the triage confirmed counts plus 10/10 sampled cells with no m_aCompustat row at calendar t-12 (e.g. permno 84411 2022-12 positionally lagged to 2003-12). Exact numeric match on all three counts \u2014 no further spot-check required.",
+      "next_action": "None \u2014 register section A entry 'GrLTNOA' already records this residual with the exact count."
+    },
+    {
+      "factor": "GrSaleToGrInv",
+      "verdict": "closed_pending_register_update",
+      "reasoning": "Measured beyond_tol=9,759 + missing=12,568 = 22,327 cells, extra=0, max=142.5 \u2014 same shape as the spec's simulated residual (9,877 value + 12,771 script-only = 22,648, 0 inf, 0 native-only) with slightly stale counts, and the register entry's '~0.4% of oracle cells differ' understates the measured ~0.9% of 2,482,184 joint cells. Spot-checks confirm both classes: 5/5 sampled missing cells have a row at t but NO m_aCompustat row at calendar t-12 (e.g. permno 33815 1987-08, permno 11511 2016-12) so both primary and fallback are undefined for the engine while the script's positional lags produce a value; 5/5 sampled value cells (e.g. permno 92340 1998-04, permno 82704 2006-05) have the calendar t-12 row but NO t-24 row, so the engine takes the calendar 12m fallback while the script's positional shift(24) supplies a stale primary \u2014 exactly the documented primary/fallback-mix mechanism, whose formula-swing explains max diff 142.5.",
+      "next_action": "Update the register's GrSaleToGrInv entry (b) with measured counts: 'Measured residual: 12,568 oracle-only cells (no calendar t-12 row; engine NaN) + 9,759 value cells (max abs diff 142.5) where calendar t-24 is absent and the engine's calendar 12m fallback replaces the script's stale positional primary \u2014 22,327 cells, ~0.9% of joint support (previous ~0.4% figure and the simulated 22,648 count are stale); 0 extra-in-native, 0 inf.'"
+    },
+    {
+      "factor": "GrSaleToGrOverhead",
+      "verdict": "closed_pending_register_update",
+      "reasoning": "Measured beyond_tol=10,718 + missing=12,400 (=23,118 total), extra=0, inf_in_candidate=0, max=336.9 vs p1_patch_specs.json expected_residual '~23,000 cells: 10,888 both-differ + 12,350 script-only, all 6,472 inf cells eliminated'. Same family, counts drifted ~1-2% from the pre-final freeze. Register text's '~0.4% residual oracle diffs at gap cells' checks out: 10,718/2,605,094 both-valued = 0.41%. Spot-check: 4/4 sampled missing cells (permno 18331 1953-06, 27836 1988-03, 86319 1997-02, 18112 2007-05) have NO m_aCompustat row at calendar t-12, so the script's positional shift(12/24) reached a stale month while the engine's calendar LAG correctly yields NaN \u2014 exactly the registered positional-lag class shared with GrSaleToGrInv.",
+      "next_action": "Update the GrSaleToGrOverhead entry in p1_deviation_register.md to pin final measured counts: 'Final residual vs oracle (grand_sweep 2026-07-31): 10,718 both-valued gap cells beyond tol (0.41% of joint support, max abs 336.9) + 12,400 oracle-only support cells at calendar-gap lags; zero extras; all inf cells eliminated.' Also refresh the stale 10,888/12,350 counts in the p1_patch_specs.json expected_residual."
+    },
+    {
+      "factor": "IntanBM",
+      "verdict": "closed_pending_register_update",
+      "reasoning": "Measured 1,714,687 beyond-tol (~all of 1,715,724 both-valued cells) + 12,771 missing + 13,604 extra, max 2.36 \u2014 'differs ~everywhere', consistent with the registered deliberate deviation (per-month 1%/99% trim of ret60 via _trim_by_month, p1_factor_engine.py:2260, vs the reference's look-ahead full-sample _trim_global). The on-disk proof was stale: refmode_baseline.csv (17:01) showed 0/5 FAIL, but p1_factor_engine.py was modified at 19:25 and refmode was never re-run. I re-ran the CURRENT kernel with REFERENCE_MODE=True for all four Intan factors into the scratchpad and diffed vs Data/golden/oracle: 4/4 PASSED \u2014 IntanBM 0 cells beyond tol, 0 support diffs, max_abs_diff 6.0e-16. So the kernel is now proven exact in reference mode and the entire production residual is attributable to the registered point-in-time trim deviation (trim selection changes each month's regression sample, hence residuals everywhere plus small support churn).",
+      "next_action": "Update p1_deviation_register.md section 'IntanBM, IntanCFP, IntanEP, IntanSP \u2014 point-in-time trimming': DELETE the stale note 'these factors also carry other, not-yet-implemented formula reconciliations \u2014 their oracle diff is not yet attributable to this deviation alone' and replace with 'Kernel verified exact in REFERENCE_MODE on 2026-07-31 post-19:25 kernel (0 beyond-tol, 0 support diffs at atol 1e-6/rtol 1e-5); production diff vs oracle (IntanBM: 1,714,687 beyond-tol + 12,771/13,604 support, max 2.36) is attributable to the per-month-trim deviation alone.' Also refreeze Data/golden/refmode_check/Intan*.parquet and refmode_baseline.csv, which were frozen at 16:57-17:01 with the pre-fix kernel and still show the failing baseline."
+    },
+    {
+      "factor": "IntanCFP",
+      "verdict": "closed_pending_register_update",
+      "reasoning": "Measured 1,864,967 beyond-tol (~all of 1,865,176 both-valued) + 15,981 missing + 15,315 extra, max 23.4 \u2014 differs ~everywhere as the per-month-trim deviation predicts. Verified by re-running the current (post-19:25) kernel with REFERENCE_MODE=True: IntanCFP passed exactly vs the oracle (0 cells beyond tol, 0 support diffs, max_abs_diff 9.3e-10), so the production residual is fully explained by the registered look-ahead-correction trim (_trim_by_month vs script winsor2 by=None full-sample). The stale on-disk refmode_baseline (0/5 fail, pre-fix kernel) was the only contrary evidence and is superseded by this re-run.",
+      "next_action": "Same register update as IntanBM: remove the 'not yet attributable to this deviation alone' caveat, record refmode-exact verification (2026-07-31) and the final production residual counts (1,864,967 beyond-tol + 15,981/15,315 support, max 23.4); refreeze refmode_check/IntanCFP.parquet."
+    },
+    {
+      "factor": "IntanEP",
+      "verdict": "closed_pending_register_update",
+      "reasoning": "Measured 1,865,004 beyond-tol + 15,981 missing + 15,315 extra (support counts identical to IntanCFP \u2014 shared ZZ1 kernel), max 21.3 \u2014 differs ~everywhere per the per-month-trim deviation. REFERENCE_MODE re-run of the current kernel passed exactly vs the oracle (0 beyond-tol, 0 support diffs, max_abs_diff 4.5e-13), proving the kernel exact and the production residual attributable solely to the registered point-in-time trim.",
+      "next_action": "Same register update as IntanBM: drop the stale 'not yet attributable' caveat, record refmode-exact verification and final production counts (1,865,004 beyond-tol + 15,981/15,315 support, max 21.3); refreeze refmode_check/IntanEP.parquet."
+    },
+    {
+      "factor": "IntanSP",
+      "verdict": "closed_pending_register_update",
+      "reasoning": "Measured 1,860,586 beyond-tol (~all of 1,860,764 both-valued) + 15,949 missing + 15,296 extra, max 45.4 \u2014 differs ~everywhere per the per-month-trim deviation. REFERENCE_MODE re-run of the current kernel passed BIT-EXACT vs the oracle (0 beyond-tol, 0 support diffs, max_abs_diff 0.0), proving the kernel exact and the production residual attributable solely to the registered point-in-time trim deviation.",
+      "next_action": "Same register update as IntanBM: drop the stale 'not yet attributable' caveat, record refmode-exact verification and final production counts (1,860,586 beyond-tol + 15,949/15,296 support, max 45.4); refreeze refmode_check/IntanSP.parquet."
+    },
+    {
+      "factor": "InvestPPEInv",
+      "verdict": "closed_registered_deviation",
+      "reasoning": "Measured missing=14,319 EXACTLY matches the register's '14,319 oracle-only gap-lag cells dropped as artifacts'; beyond_tol=0 and extra=0 match 'shared cells match exactly / zero extras'. The support-triage concern that the ZERO_TO_NULL guard 'was never applied' is resolved: p1_factor_specs.py:1089 now reads DIV(ADD(DELTA(ppegt,12), DELTA(invt,12)), ZERO_TO_NULL(LAG(at,12))) and the golden native has 0 inf cells and 0 extras, so the 30 inf extras the triage flagged are gone. Spot-check: 4/4 sampled missing cells (permno 18331 1953-06, 78295 1988-02, 46659 1996-12, 86319 2007-11) have no m_aCompustat row at calendar t-12 \u2014 the script's positional shift(12) artifact, exactly the registered mechanism.",
+      "next_action": "None \u2014 the existing InvestPPEInv register entry is accurate as written (14,319 gap-lag cells, ZERO_TO_NULL amendment applied and confirmed in the refrozen golden native)."
+    },
+    {
+      "factor": "Investment",
+      "verdict": "closed_registered_deviation",
+      "reasoning": "Measured missing=194 EXACTLY matches the register's NARROWED (2026-07-31) entry '~194 oracle-only cells where polars emits \u00b10.0 from ~1e-17 float noise on all-zero-ratio windows; engine keeps NaN'. Spot-check: the oracle value at ALL 194 missing cells is -0.0 and they involve only permnos 11326 and 12072 (the register cites permno 12072 as the exemplar). Extra=0 matches 'zero extra-in-engine'. The register's '~25 both-valued cells fail the 1e-6 absolute tolerance' do not appear because the grand sweep runs atol=1e-6 WITH rtol=1e-5 and those cells agree to ~1e-8 relative \u2014 beyond_tol=0 is strictly better than documented, not a mismatch.",
+      "next_action": "None required; optionally append one clause to the register entry noting the ~25 float32 cells only fail under absolute-only tolerance and pass the standard sweep (atol 1e-6, rtol 1e-5), where the measured residual is exactly the 194 \u00b10.0 cells."
+    },
+    {
+      "factor": "LRreversal",
+      "verdict": "closed_pending_register_update",
+      "reasoning": "Measured vs p1_patch_specs.json expected_residual: missing 36,258 (exact match), extra 140 (exact match), beyond_tol 3,915 vs '~4,054' (same family), max 26.7868 vs '~26.8' (match). The register text in p1_deviation_register.md however still carries older numbers ('38,746 differing cells plus 4,894 support cells') from a pre-fix measurement \u2014 stale. Spot-check: 3/3 sampled missing cells (permno 77973 1987-11, 47351 1980-05, 44223 1996-02) each have SMT coverage gaps inside the calendar t-13..t-36 window (23, 7, 24 gap months respectively), so the script's positional 24-row shift reaches over the gap while the engine's calendar window correctly yields NaN \u2014 exactly the registered positional-lag defect class.",
+      "next_action": "Update the LRreversal register entry's measured-residual sentence to: 'Measured residual vs oracle after all fixes (2026-07-31): 36,258 missing-in-engine cells (SMT gap inside the t-13..t-36 window), 3,915 both-valued cells beyond tol (max abs 26.8), 140 extra-in-engine cells (>=36 calendar months but <36 SMT rows) \u2014 all the same positional-shift-over-gappy-frame deviation.'"
+    },
+    {
+      "factor": "Leverage",
+      "verdict": "closed_registered_deviation",
+      "reasoning": "Measured extra=281,509, missing=0, beyond_tol=0 EXACTLY matches p1_support_triage.json ('all 281,509 extras verified outside SignalMasterTable membership... within SMT the supports agree exactly'). p1_universe_policy.json confirms policy Leverage='smt_strict', which per the triage/reconciliation procedure counts as covered (golden natives are deliberately frozen UNMASKED; the smt_strict mask is applied at emit/diff time and yields exact oracle parity). Spot-check: 6/6 randomly sampled extra cells (e.g. permno 13083 2015-07, 25321 1986-11, 16691 2023-05) have a native value but NO SignalMasterTable row \u2014 the off-SMT Compustat-x-CRSP grid, exactly the SMT-universe-masking family in the register.",
+      "next_action": "None \u2014 covered by p1_universe_policy.json Leverage=smt_strict and the existing SMT universe-masking register family; no register text or tree change needed."
+    },
+    {
+      "factor": "MS",
+      "verdict": "closed_registered_deviation",
+      "reasoning": "Measured beyond_tol=3,503, missing=0, extra=0, max=1. Register section 'MS \u2014 polars/pandas float knife-edges on indicator flips (oracle artifact)' and p1_patch_specs expected_residual both state ~3,503 both-valued cells (0.74%, 227 permnos, |diff| 1-2 score points) with support exact (0 missing, 0 extra). Count matches verbatim (3,503 = 3,503) and measured max |diff| of 1 score point sits inside the documented 1-2 range; support exactness matches. Match is numerically obvious (exact count), no further spot-check needed.",
+      "next_action": "none \u2014 register entry is accurate as written (optionally tighten '|diff| 1-2 score points' to 'max |diff| = 1 score point in the frozen golden run')."
+    },
+    {
+      "factor": "MeanRankRevGrowth",
+      "verdict": "closed_pending_register_update",
+      "reasoning": "Measured extra=139,762, beyond_tol=0, missing=0. p1_support_triage.json documents exactly this: engine op weighted_lagged_rank_growth emits at months lacking an m_aCompustat row (the script's output frame IS m_aCompustat), 139,762 extras, joint values bit-identical, with universe policy 'm_aCompustat_rows' recorded in p1_universe_policy.json to mask them. Independent spot-check: recomputed residual gives extra=139,762 with max joint diff 0.0; 5/5 freshly sampled extras (87521 2009-05, 11048 2012-05, 19430 1982-10, 76041 2001-10, 27043 2022-04) confirmed to have NO m_aCompustat row at t. However, p1_deviation_register.md contains no MeanRankRevGrowth section \u2014 triage's 'covered_by_existing_register_entry' points only at the universe-policy JSON.",
+      "next_action": "Add register entry (section A): '### MeanRankRevGrowth \u2014 engine-only support at non-Compustat months (universe mask). The engine evaluates the 5-term weighted average of calendar-lagged ranks (t-12..t-60) on the wide grid, so it emits values at 139,762 permno-months with no m_aCompustat row at t (the script's output frame is m_aCompustat itself; sampled 12/12 + 5/5 have no comp or SMT row at t). Joint-support values are bit-identical (0 beyond-tolerance, 0 missing). Handled by p1_universe_policy.json policy m_aCompustat_rows applied at emit time; the golden native snapshot predates the mask.'"
+    },
+    {
+      "factor": "NOA",
+      "verdict": "closed_registered_deviation",
+      "reasoning": "Measured missing=15,351, beyond_tol=0, extra=0. Register section 'NOA' documents exactly 15,351 across-gap oracle cells from NOA.py:56 positional groupby.shift(12) vs the engine's calendar at_{t-12} lag, masked as oracle_artifact; p1_support_triage confirms 12/12 sampled cells reconstruct the oracle value from the 12th-prior-ROW at. Spot-check: 2/2 freshly sampled missing cells (68583 1991-12, 85439 1985-01) have an m_aCompustat row at t but none at calendar t-12 \u2014 the exact positional-lag signature.",
+      "next_action": "none \u2014 register entry is accurate (count matches verbatim, 0 value cells and 0 extras as documented)."
+    },
+    {
+      "factor": "NetDebtFinance",
+      "verdict": "closed_pending_register_update",
+      "reasoning": "Measured missing=13,727, beyond_tol=0, extra=0 \u2014 verbatim match to p1_patch_specs expected_residual ('13,727 missing-in-engine cells, all from the script's positional groupby.shift(12) for l12_at... Both-valued and extra cells: exactly 0 in simulation'). Spot-check: sampled missing cell permno 39888 1972-09 has a comp row at t, no row at calendar t-12, positional shift(12) lands at 1970-06 (27 months stale) and reconstructs the oracle value -0.178743961 exactly; second sample 40600 1972-10 likewise (positional lag 1971-04, reconstructs -0.020470230). But the spec instructs 'register as the standard positional-lag deviation' and p1_deviation_register.md has NO NetDebtFinance section.",
+      "next_action": "Add register entry (section A): '### NetDebtFinance \u2014 calendar vs positional 12-month at lag (residual). Engine computes (dltis - dltr + dlcch_fillna0) / avg(at, at_{t-12cal}) with |x|>1 -> NaN (the script's trim) on the raw m_aCompustat universe \u2014 formula, trim, and dlcch sign now reference-exact. Residual: the reference's positional groupby.shift(12) for l12_at (NetDebtFinance.py L45) bridges m_aCompustat calendar gaps (e.g. permno 39888 1972-09 scaled by at from 1970-06), emitting 13,727 oracle-only cells where the calendar t-12 row does not exist; engine NaN there is P4-correct. 0 value-divergent and 0 extra cells. Same family as NetEquityFinance/OrderBacklogChg.'"
+    },
+    {
+      "factor": "NetEquityFinance",
+      "verdict": "closed_pending_register_update",
+      "reasoning": "Measured missing=13,542, beyond_tol=0, extra=0. Register section 'NetEquityFinance \u2014 calendar vs positional 12-month at lag (residual)' documents ~13,542 oracle-only cells (count matches exactly) 'plus a small number of value cells at gap permnos' \u2014 but the measured golden run has ZERO value cells, so that clause is stale. Spot-check: 2/2 sampled missing cells (12160 1982-05, 75269 1995-08) have a comp row at t and no row at calendar t-12, confirming the positional-lag mechanism; the dv term and |x|>1 trim eliminated all 1,363,949 former value divergences and 417,276 extras exactly as the patch spec predicted.",
+      "next_action": "Update the existing register entry's last sentence to: 'the oracle emits exactly 13,542 cells where the true calendar t-12 at does not exist (engine NaN, P4-correct); the frozen golden run shows 0 value-divergent and 0 extra cells \u2014 the formerly anticipated small sliver of value cells did not materialize.'"
+    },
+    {
+      "factor": "OrderBacklog",
+      "verdict": "closed_registered_deviation",
+      "reasoning": "Measured missing=3,033, beyond_tol=0, extra=0 \u2014 verbatim match to the register ('3,033 oracle-only gap-lag cells dropped as artifacts; zero extras; all shared cells match to 0 abs error') and to p1_support_triage (12/12 sampled cells reconstruct the oracle as ob/(0.5*(at(t)+at(12th-prior ROW)))). Spot-check: 2/2 freshly sampled missing cells (17807 1994-12, 11896 2010-06) have a comp row at t and no row at calendar t-12.",
+      "next_action": "none \u2014 register entry accurate, counts match verbatim."
+    },
+    {
+      "factor": "OrderBacklogChg",
+      "verdict": "closed_registered_deviation",
+      "reasoning": "Measured beyond_tol=4 (max 0.044437825679779), missing=4,690, extra=0 \u2014 verbatim match to the register ('4 value cells beyond tolerance + 4,690 coverage-only cells') and the patch spec ('4 value cells (max_abs ~0.0444) + 4,690 oracle-only coverage cells'). Spot-check: sampled missing cell 33048 1980-09 has row@t but no row at calendar t-12; sampled cell 18439 1978-06 has rows at t and t-12 but NO row at calendar t-24 \u2014 the OB_{t-12} term's denominator needs at_{t-24}, so the engine's NaN is the documented 'NaN when any calendar lag is unobserved' while the script's positional shift bridges the gap.",
+      "next_action": "none \u2014 register entry accurate, counts and max-abs match verbatim."
+    },
+    {
+      "factor": "PctAcc",
+      "verdict": "closed_pending_register_update",
+      "reasoning": "Measured missing=3,870, beyond_tol=0, extra=0. Register section 'PctAcc \u2014 calendar vs positional 12-month lags in the accrual fallback' documents ~3,870 oracle-only cells (exact count match) 'plus a small number of value cells at gap permnos in the fallback branch' \u2014 the measured run has ZERO value cells, so that clause is stale. Spot-check: 2/2 sampled missing cells (55757 1988-09, 65381 1985-02) have a comp row at t and no row at calendar t-12, the positional shift(12) of act/che/lct/dlc/txp gap-bridge signature the entry describes.",
+      "next_action": "Update the existing register entry's residual sentence to: 'Residual: exactly 3,870 oracle-only cells (engine NaN at true-calendar-gap months where the script's positional shift(12) of act/che/lct/dlc/txp bridges m_aCompustat coverage gaps); the frozen golden run shows 0 value-divergent and 0 extra cells.'"
+    },
+    {
+      "factor": "PredictedFE",
+      "verdict": "open_bug",
+      "reasoning": "The residual shape does NOT match expectations: p1_patch_specs expected_residual says 'Exact pass (float noise ~1e-8)' after the kernel patch, but measured is beyond_tol=143,916 (max 4.84e-3 \u2014 five orders of magnitude above float noise) plus missing=12,516, and PredictedFE has no deviation-register entry. Recomputed structure: divergence is confined to exactly 10 June cohorts (1995, 1996, 1997, 1998, 2000, 2005, 2006, 2008, 2014, 2015, each replicated across its 12 expansion months), where 55-100% of each cohort's cells shift coherently \u2014 the signature of a perturbed per-month OLS fit, matching the spec's own measurement that the trim-interpolation toggle alone moves values up to 4.0e-3. The 12,516 missing cells are the ENTIRE June-1982 cohort: 1,043 permnos x 12 expansion months, oracle-valued, native all-NaN.",
+      "next_action": "Suspected mechanism, two parts. (1) Trim order-statistic mismatch: the FErr trim at p1_factor_engine.py:2127 calls _trim_by_group(..., interpolation='nearest'), which uses pandas/numpy quantile 'nearest' (round-half-to-EVEN of q*(n-1)), while the reference winsor2 runs the polars quantile 'nearest' (round-half-AWAY-from-zero) \u2014 a difference the engine itself documents in _polars_nearest_quantile (p1_factor_engine.py:1917-1930, used by AbnormalAccruals at L2440-2453 but NOT here). For June cohorts whose FErr pool size puts (n-1)*0.01 or (n-1)*0.99 exactly on x.5, the two conventions keep/drop a different boundary observation, perturbing that month's regression coefficients and shifting every predicted cell in the cohort. Sampled proof (5 divergent cells, all inside the 10 bad cohorts, whole-cohort coherent shifts): permno 22373 1997-09 native 0.052844357 vs oracle 0.05285562; 50972 2015-10 0.06480106 vs 0.064797655; 53938 1996-07 0.012866482 vs 0.012874853; 33137 2000-06 0.08122051 vs 0.08070067; 25582 1997-06 0.031521767 vs 0.0315335. Fix: route the FErr trim through _polars_nearest_quantile per month. (2) June-1982 cohort wholly missing in native (12,516 = 1,043 permnos x 12 months): suspected engine-only fit gate at the first emitting cohort \u2014 _ols_predictions_by_group(min_obs=5) at L2140-2147 (or all-NaN calendar lag ranks at the sample start) suppresses the month's regression where the script still fits and predicts. Verify by counting valid (FErr, lagSG/lagBM/lagAOP/lagLTG) fit rows at 1982-06 in both implementations."
+    },
+    {
+      "factor": "Price",
+      "verdict": "closed_registered_deviation",
+      "reasoning": "Measured extra=974,791, missing=0, beyond_tol=0, max=0 (joint values bit-identical). p1_support_triage.json documents exactly 974,791 extras as permno-months outside the SignalMasterTable universe (12/12 sampled by triage), resolved by p1_universe_policy.json Price=smt_strict applied at emit time. Spot-check: sampled extras (permno 68815 1995-07, permno 92965 2010-11) confirmed absent from SignalMasterTable.parquet; golden native is the pre-emit-mask grid, so the extras are expected there.",
+      "next_action": "No register change needed; count and mechanism match the recorded smt_strict policy exactly (mask applied at emit time removes all 974,791 extras)."
+    },
+    {
+      "factor": "RD",
+      "verdict": "closed_registered_deviation",
+      "reasoning": "Measured extra=163,780, missing=0, beyond_tol=0, max=5.8e-11 (float32 storage noise, within tolerance). p1_support_triage.json documents exactly 163,780 extras as cells present in m_aCompustat/monthlyCRSP but outside SMT (RD.py builds on SMT with non-null gvkey), resolved by p1_universe_policy.json RD=smt_strict. Spot-check: sampled extras (permno 34884 1963-12, permno 75508 1991-03) confirmed absent from SignalMasterTable.parquet.",
+      "next_action": "No register change needed; measured residual is byte-for-byte the documented smt_strict universe family (163,780 extras, joint support exact)."
+    },
+    {
+      "factor": "SP",
+      "verdict": "closed_registered_deviation",
+      "reasoning": "Measured extra=281,519, missing=0, beyond_tol=0, max=0. p1_support_triage.json documents exactly 281,519 extras (SP.py inner-merges m_aCompustat with SMT; engine computes on the raw grid), resolved by p1_universe_policy.json SP=smt_strict. Spot-check: sampled extras (permno 41930 1992-03, permno 20749 1958-12) confirmed absent from SignalMasterTable.parquet.",
+      "next_action": "No register change needed; measured residual matches the recorded smt_strict policy exactly."
+    },
+    {
+      "factor": "SurpriseRD",
+      "verdict": "closed_registered_deviation",
+      "reasoning": "Measured missing=6,728, extra=0, beyond_tol=0, max=0 \u2014 exactly the count in p1_support_triage.json ('Count 6,728 matches the register's ~6.7k', 2000/2000 cells sampled there) and the p1_deviation_register.md SurpriseRD entry (calendar-vs-positional 12-month xrd lag). Independent spot-check: permno 36062 1971-12 and permno 29103 1992-03 both have an m_aCompustat row at t but NO row at calendar t-12 (nearest prior rows 1970-11 and 1990-05), so the script's positional shift(12) bridges the gap while the engine's calendar lag correctly yields NaN.",
+      "next_action": "Optionally tighten the register's '~6.7k firm-months' to the exact 6,728; no substantive change needed."
+    },
+    {
+      "factor": "REV6",
+      "verdict": "closed_pending_register_update",
+      "reasoning": "Measured missing=711, extra=0, beyond_tol=0, max=1.16e-10 (within tolerance). Expected residual (p1_patch_specs.json REV6): positional-lag deviation at SMT-gap months, 'order of the current 91-cell set' \u2014 right family, stale number: the 91 counted PRE-patch both-valued diffs; post-patch every gap-window cell becomes NaN in native, so the footprint is 711 oracle-only cells. Spot-check 8/8 sampled missing cells have SMT listing gaps inside the t-7..t lag window: permno 17347 1982-08 (SMT missing 1982-06/07 \u2014 the same gap the register proves for AnalystRevision), 83550 1998-12 (1998-05 missing), 87248 2004-04 (2003-09..2004-01 missing), 21020 2014-01 (2013-06..11 missing), 18103 2024-12 (2024-06..09 missing), etc. \u2014 exactly the documented mechanism (oracle jumps the gap with stale meanest/prc; engine calendar lags yield NaN).",
+      "next_action": "Update the REV6 register entry: 'Measured residual after the calendar-lag patch: 711 missing-in-native cells (oracle-only), all at permno-months whose 7-term lag window (t-7..t) spans an SMT listing gap, where the reference's positional shift emits a value from stale meanest/prc and the engine's calendar lags correctly yield NaN; joint-support values agree to <1.2e-10; zero extras. The previously cited 91 cells were the pre-patch both-valued divergences of the same family.'"
+    },
+    {
+      "factor": "ShareVol",
+      "verdict": "closed_pending_register_update",
+      "reasoning": "Measured beyond_tol=464 (sampled flips all native 1.0 vs oracle 0.0), extra=2,864, missing=0, max=1. Register says 'Order tens of cells' \u2014 right family, stale count. Mechanism verified by exact script simulation at permno 42358: SMT listing gap 1975-01..1975-05; at 1975-07 the script's positional shift(2) pulls 1974-12 vol (0.0275) giving tempShareVol=2.556 -> oracle 0.0, while the engine's calendar lag sees NaN turnover -> 1.0 (the 464 flips); at 1975-06 the script's positional l2_dshrout carries the pre-gap shrout-change flag (1.539->1.587 at 1974-11) so dropObs=True and the oracle drops the row, while the engine's calendar dshrout is False and keeps it -> native-only (the 2,864 extras). All 13 sampled cells (5 flips + 8 extras: 13653 1959-11, 21011 2023-10, 38770 1983-01, 84351 2003-09, 16408 1934-01, 92218 2024-12, ...) sit immediately after SMT listing gaps.",
+      "next_action": "Update the ShareVol register entry's residual sentence: 'Measured residual: 464 both-valued flips (native 1.0 from calendar-NaN turnover vs oracle 0.0 from gap-jumping positional turnover) plus 2,864 native-only cells (oracle drops post-gap rows because positional dshrout/l1/l2_dshrout compare shrout across the gap and trip dropObs; engine calendar comparisons are False and keep the SMT row); all at SMT listing gaps, everything else exact. Replaces the stale estimate of order-tens of cells.'"
+    },
+    {
+      "factor": "RevenueSurprise",
+      "verdict": "open_bug",
+      "reasoning": "Measured extra=3, missing=0, beyond_tol=0, max=6.6e-17 \u2014 near-exact, but the 3 extras do NOT match the expected/registered mechanism ('rare permno-months where the m_aCompustat first-gvkey mapping disagrees with SMT's gvkey'). All 3 extras are permno 77703 at 1996-12/1997-01/1997-02 with native value inf, and the gvkey mapping AGREES (SMT gvkey = m_aCompustat gvkey = 10791 for every month 1995-06..1997-06), so the registered residual class does not cover them.",
+      "next_action": "Suspected mechanism (sampled proof): gvkey 10791 reports cshprq=0.000 with revtq=4.368 for the quarters stamped 1996-12..1997-03, so revps=revtq/cshprq=+inf and the z-score is inf. RevenueSurprise.py explicitly runs df['RevenueSurprise'].replace([np.inf,-np.inf],np.nan) followed by dropna (script lines ~93-98), so the oracle drops these rows; the engine's _op_seasonal_surprise_zscore has no inf->NaN replacement and emits inf. Fix: null non-finite z-scores (or guard the revps division at cshprq==0) in the kernel; then re-check for the registered gvkey-mapping residual, which is currently absent (0 cells)."
+    },
+    {
+      "factor": "RDAbility",
+      "verdict": "open_bug",
+      "reasoning": "Expected residual (p1_patch_specs.json): 'Exact pass ... at most the 3 native-only cells remain as edge noise'. Measured: 48 beyond_tol (max 0.149) + 15 extra \u2014 does not match. All divergence is confined to two permnos: the 48 flips are all permno 12146; extras are 12146 (value 0.0) and 82530 (value 0.566197).",
+      "next_action": "Two sampled mechanisms. (a) permno 12146 / gvkey 14983: xrd==0 for fyears 1988-1993 then a 22-year fyear gap to 2015; the positional lag bridges the gap so a lag's entire last-8-valid-pair sample has tempXLag identically 0 -> singular design matrix; the script's polars_ols rolling_ols returns a null coefficient (gamma null) while the engine's lstsq returns the minimum-norm solution with slope exactly 0.0, injecting an extra 0-valued gammaAbility into the 5-lag mean \u2014 proven by the sampled ratios native/oracle = exactly 1/2 (2017-10: 0.1490 vs 0.2980), 2/3 (2018-11), 3/4 (2019-12), 4/5 (2021-02), and by the native-only 0.0 cells (2016-11..2017-09) where the oracle has no gamma at all. Fix: null the beta when the regression sample's tempXLag has zero variance (rank-deficient), matching polars_ols. (b) permno 82530: gvkey switch 61435->187677 at fyear 2015 (new gvkey has 2 rows, xrd NaN); the script's shifts/regressions run .over('gvkey') so the oracle has no gamma, while the engine's permno-keyed wide panel carries the 61435 history across the switch and emits 0.566197 at 2016-06/2016-08. Fix: key the RDAbility lags/windows by gvkey (same class as the registered ChTax gvkey-vs-permno residual, but unregistered and fixable here)."
+    },
+    {
+      "factor": "RDcap",
+      "verdict": "open_bug",
+      "reasoning": "Measured extra=323,732, missing=0, beyond_tol=0, max=0. The prior total-miss (537,801 cells, size_filtered min_tercile bug) is fixed and joint support is value-exact, but the residual does NOT match the triage-predicted second mechanism (grid-wide FILLNA(xrd,0) manufacturing values before each firm's first m_aCompustat month): all 5 sampled extras are 49-162 months AFTER the firm's first m_aCompustat month with real rows at t. Decomposition against SMT: 322,694 extras are outside SMT entirely, and 1,038 extras are SMT rows where SMT mve_c is NaN \u2014 sampled 6/6 (25671 1980-01, 59838 1981-07, 18439 1983-04, 75951 1989-10, 46659 1993-03, 88173 2024-10) all have mve_c=NaN, where RDcap.py sets tempsizeq (qcut of the merged panel's mve_c) to NaN and nulls RDcap, while the engine's size filter passes them. Neither class is registered as an accepted deviation (p1_universe_policy.json lists RDcap as UNRESOLVED), and smt_strict masking alone would not remove the 1,038 in-SMT cells.",
+      "next_action": "Suspected mechanism with sampled proof: (1) no universe mask \u2014 322,694 extras are non-SMT grid cells (RDcap.py left-joins SMT and drops mve_c-missing rows via the tempsizeq NaN rule); set p1_universe_policy.json RDcap=smt_strict. (2) missing-size handling \u2014 engine _op_size_filtered keeps cells whose size input is missing (or sources size other than SMT mve_c): 1,038 in-SMT extras all have SMT mve_c=NaN yet native emits values (e.g. 25671 1980-01 native 0.556); apply the std_turn rule already in the register ('null when ... size is missing') and rank tercile breakpoints over the script's merged-panel mve_c population. Re-diff after both fixes; expect exact support parity since joint values already match at max abs diff 0."
+    },
+    {
+      "factor": "TotalAccruals",
+      "verdict": "closed_registered_deviation",
+      "reasoning": "Measured beyond_tol=0, missing=14,893, extra=22,346 matches the existing register entry's three items exactly (~14.9k calendar-vs-positional-lag oracle cells incl. the 108 at_lag12==0 inf cells; ~22.3k late-branch zero-fill firm-months) and p1_support_triage.json's covered_by_existing_register_entry verdict. Spot-checks: miss cells permno 34666 @2008-10 and 54755 @1987-12 both have an m_aCompustat row at t but NONE at calendar t-12 (script's positional shift(12) bridges the gap) \u2014 register item 2; extra cells permno 85645 @2017-11 and 10597 @2003-09 are post-1989 rows with dv=NaN while ni/oancf/ivncf/fincf are all present, so the script's raw-column late branch NaNs the signal where the engine applies the documented zero-fill \u2014 register item 1.",
+      "next_action": "None \u2014 the '### TotalAccruals' entry in p1_deviation_register.md already documents all three residual classes with counts (~14.9k / ~22.3k / 108) that match the measured 14,893 / 22,346."
+    },
+    {
+      "factor": "UpRecomm",
+      "verdict": "closed_registered_deviation",
+      "reasoning": "Measured beyond_tol=8, missing=0, extra=0, max=1 is numerically identical to the spec's expected_residual ('~8 value-flip cells remain... Extras (62,230) and misses (109) go to 0') and the register's UpRecomm entry ('flips the signal where an analyst revised twice in a month (8 cells, e.g. MRBA 1999-05)'). Verified the 8 cells are all 0-vs-1 flips (e.g. permno 66245 @2003-03 native=1 oracle=0; permno 79366 @1999-10 native=0 oracle=1) \u2014 exactly the file-order vs anndats-sorted .last() artifact. Match is numerically obvious (8==8, support exact).",
+      "next_action": "None \u2014 register entry '### UpRecomm' already documents the 8-cell file-order .last() oracle artifact."
+    },
+    {
+      "factor": "VolMkt",
+      "verdict": "closed_pending_register_update",
+      "reasoning": "Measured beyond_tol=4,507, missing=840, extra=928 matches the spec's expected_residual ('residual cells only on the 505 non-chronologically-stored permnos where the oracle's file-order 12-row window mixes out-of-order months'). Verified exhaustively, not just by sample: recomputed the non-chronological permno set from monthlyCRSP.parquet raw row order (exactly 505 permnos), then checked every divergent cell (value+miss+extra) \u2014 432 permnos carry divergences and 0 fall outside the 505 set. The spec calls it a 'registered oracle artifact' but p1_deviation_register.md has no VolMkt entry (only VolSD's).",
+      "next_action": "Add to p1_deviation_register.md: '### VolMkt \u2014 file-order rolling windows in the reference (oracle artifact) \u2014 Same mechanism as VolSD: the reference script never sorts, so its trailing 12-row window over vol*|prc|/mve_c runs in raw parquet ROW ORDER; for the 505 permnos whose monthlyCRSP rows are not stored chronologically the oracle mixes arbitrary months. Measured residual (2026-07-31): 4,507 value cells beyond 1e-6 (max ~5.26) plus 840 missing-in-native and 928 extra-in-native support cells, spread over 432 permnos, ALL confined to the 505 non-chrono permnos (verified exhaustively). Engine uses chronological windows; everything off those permnos is exact.'"
+    },
+    {
+      "factor": "VolSD",
+      "verdict": "closed_pending_register_update",
+      "reasoning": "Measured beyond_tol=14,283 sits inside the register's stated band ('value diffs ~7-14k cells depending on tolerance'); missing=801 matches '~800 support cells' but the register omits the 900 extra-in-native cells, and its '359 of 505 permnos' phrasing is stale. Verified exhaustively (stronger than a spot-check): every divergent cell \u2014 14,298 value at 1e-6, 801 miss, 900 extra \u2014 lies on one of 421 permnos, all inside the recomputed 505-permno non-chronological set (0 outside), confirming the documented file-order rolling-window oracle artifact; sampled cells (e.g. permno 75930 @2000-01 native 0.7392 vs oracle 0.6917) are on non-chrono permnos.",
+      "next_action": "Update the '### VolSD' register entry's residual sentence to: 'Measured residual (2026-07-31): 14,283 value cells beyond 1e-6 tolerance (max ~30.2) plus 801 missing-in-native and 900 extra-in-native support cells, across 421 divergent permnos \u2014 all confined to the 505 permnos whose monthlyCRSP rows are not stored chronologically (verified exhaustively; the previously cited 359-permno figure and ~800-support-cell total were stale).'"
+    },
+    {
+      "factor": "VolumeTrend",
+      "verdict": "open_bug",
+      "reasoning": "Measured beyond_tol=52,873, missing=1,568, extra=21,263 versus the spec's expected_residual of 'Beyond-tol -> ~0; misses -> 0; extras -> order 10^2-10^3 (trim-boundary only)'. Three orders of magnitude off on values and two on support \u2014 not the documented residual. The spec's premise ('Positional==calendar is exact here: the script sorts and monthlyCRSP has zero within-permno calendar gaps') ignores NULL vol values inside the row sequence.",
+      "next_action": "Suspected mechanism: polars_ols rolling_ols(window_size=60, min_periods=30, null_policy='drop') in VolumeTrend.py COMPACTS null-vol rows before windowing, so the oracle's regression window is the last 60 NON-NULL vol observations \u2014 spanning far more than 60 calendar months whenever vol has nulls \u2014 while the engine regresses over the 60-calendar-month window; the denominator meanX stays calendar-based (asrol) on both sides. Sampled proof (5/5 beyond-tol cells reproduce oracle to ~1e-9): permno 16249 @1992-02 (47 non-null obs in the calendar window): slope over last-60-non-null rows / calendar-60m mean = -0.0166638035 = oracle -0.0166638028, while the calendar-window slope gives native -0.03451553; identical reproduction at 87753 @2020-01, 15916 @1990-09, 56557 @1986-10, 79156 @2002-07 (each with 35-54 non-null obs, i.e. nulls in-window). The 21,263 extras (native values clustered near \u00b10.06-0.07) and 1,568 misses follow from the value shift moving cells across the full-sample 1%/99% trim bounds and the min-obs gate. Fix: either mirror the compacted-window regression or register the compaction as an oracle artifact \u2014 the current spec text claiming exactness is wrong either way."
+    },
+    {
+      "factor": "grcapx",
+      "verdict": "open_bug",
+      "reasoning": "Measured beyond_tol=6,927, missing=21,926, extra=18,419 versus spec expected_residual 'order ~10k cells... Extras (301,508) -> 0 via smt_only/SMT_OUT; misses -> ~0'. The 6,927 value cells and sampled misses (5/5: calendar t-24 absent from the merged panel while the script's positional shift bridges the gap, e.g. permno 49496 @1999-04, 11402 @2009-03) fit the registered positional-lag family, but the combined value+miss count (~29k) is ~3x the registered 'order ~10k', and the 18,419 extras \u2014 expected to be ~0 \u2014 sample to a DIFFERENT, unregistered mechanism: 4/5 sampled extras have NO panel gaps and pos24==cal24, yet oracle is NaN.",
+      "next_action": "Suspected mechanism (two related support bugs, both verified to 1e-9 at sampled cells): (1) FirmAge patch gate computed on the wrong panel \u2014 the engine counts SMT rows while the script (ZZ1_grcapx_grcapx1y_grcapx3y.py L86) counts rows of the SMT-inner-merged-with-m_aCompustat panel, so where Compustat coverage starts later than listing the engine patches missing capx := ppent - l12_ppent at lag months the script leaves NaN. Proof: permno 48370 @1974-04 \u2014 lag month 1972-04 has capx NaN with merged-panel cumcount 23 (<24) so the script's l24_capx is NaN (oracle NaN), but the SMT row count is 36 (>=24) so the engine patches l24=3.636 and emits native (3.549-3.636)/3.636 = -0.023927 (matches stored native to 1e-9); same at 81244 @1999-12 (SMT count 35 vs merged <24), 86512 @2003-03 (28), 42906 @1977-02 (27). (2) Calendar lags taken on the FULL m_aCompustat grid instead of the SMT-masked panel, violating the register's own stated semantics ('NaN if that month is absent from the SMT-masked panel'). The max=1.8e308 diffs are inf-vs-finite cells from patched-vs-unpatched zero l24_capx. Fix the FirmAge gate to merged-panel cumcount and mask lag inputs to the merged panel, then re-measure the positional-family residual against the registered ~10k."
+    },
+    {
+      "factor": "grcapx3y",
+      "verdict": "open_bug",
+      "reasoning": "beyond_tol=8,379 matches the spec's '~8k both-finite positional-lag cells' family (sampled: pos36 != cal36 at gap permnos, e.g. 12045 @1989-11 pos36=1982-04 vs cal36=1986-11), but missing=28,540 and extra=20,388 versus the spec's 'Native-only and oracle-only cells ELIMINATED except positional-bridging edge cases'. 4/5 sampled extras have NO panel gaps (pos==cal) yet oracle NaN \u2014 the same two unregistered mechanisms as grcapx, confirmed by recomputing the script's exact merged-panel logic.",
+      "next_action": "Suspected mechanism, same as grcapx at the l12/l24/l36 legs: (1) FirmAge gate on SMT row count vs the script's merged-panel cumcount \u2014 sampled extras 18796 @1956-02, 24969 @1967-02, 11911 @1993-07, 43976 @1977-12 all have l36 (and/or l24) NaN in the script because capx at the lag month was unpatched (merged-panel FirmAge<24), while the engine's patch fired. (2) Lags taken on the full m_aCompustat grid instead of the SMT-masked panel \u2014 proof: permno 75077 @1994-08 (16 prior SMT rows, no gaps; cal24=1992-08 and cal36=1991-08 are OUTSIDE the SMT span which starts 1993-04, so the script's shift(24)/shift(36) are null -> oracle NaN), yet full-panel calendar lags capx(1992-08)=22.514 and capx(1991-08)=7.762 reproduce the stored native 17.541/(10.12+22.514+7.762)*3 = 1.3026785 exactly. Fix both, then the residual should collapse to the ~8k positional family already registered."
+    },
+    {
+      "factor": "roaq",
+      "verdict": "closed_pending_register_update",
+      "reasoning": "Measured beyond_tol=0, missing=0, extra=1,917 is EXACTLY the residual p1_support_triage.json predicted after landing its SMT_OUT fix ('masking native support to SMT rows leaves 0 missing and exactly 1,917 extras \u2014 the lag-provenance cells'). Spot-checked 2 sampled extras: permno 73198 @1989-10 and 67790 @1992-10 are both in SMT with non-null gvkey at t but ABSENT from SMT at t-3, so the script's merged-panel atq lag is null while the engine's calendar t-3 atq exists \u2014 the documented lag-provenance class. The triage's action item ('add a one-line register entry') was never done: p1_deviation_register.md has no roaq section.",
+      "next_action": "Add to p1_deviation_register.md: '### roaq \u2014 merged-panel lag vs calendar t-3 lag (residual support) \u2014 Same family as NumEarnIncrease merged-panel semantics: reference roaq.py (L28, L37, L44-50) inner-joins SMT-with-gvkey rows to m_QCompustat and looks up atq_lag3 inside that merged panel, so when the permno was outside SMT at t-3 the script lags to null even though raw quarterly atq exists at calendar t-3. The engine keeps the true calendar t-3 atq from the full quarterly history, with output masked to SMT. Residual: exactly 1,917 engine-only cells (0 missing, 0 value diffs); sampled cells (permno 73198 1989-10, 67790 1992-10) confirmed in-SMT at t and out-of-SMT at t-3.'"
+    },
+    {
+      "factor": "std_turn",
+      "verdict": "open_bug",
+      "reasoning": "Measured beyond_tol=0, missing=0, max=0 but extra=273,523 \u2014 after the size-screen fix the triage expected the residual to 'shrink to the documented row-window-vs-calendar-window family only' (small value/miss diffs at gap permnos), and the register's documented deviations (gap-spanning windows, size screen) predict nothing like a one-sided 273k engine-only support residual. Checked ALL extras, not a sample: 273,523 of 273,523 are permno-months with NO monthlyCRSP row at all (e.g. permno 80098 @2006-10 \u2014 last CRSP row 2006-09; 54535 @1979-11 \u2014 last row 1979-07; 14384 @2020-07 \u2014 last row 2019-11), i.e. post-delisting or in-gap months where the script cannot emit because its universe is raw monthlyCRSP rows.",
+      "next_action": "Suspected mechanism: missing raw-CRSP-row support gate. The engine's calendar rolling std over the wide month-grid keeps emitting at every calendar month whose trailing 36-month window has >=24 turnover observations \u2014 including months after the permno's last monthlyCRSP row \u2014 and the fixed keep-when-size-missing screen semantics then RETAIN those cells (size is missing off-row, so the quintile>=4 null never fires). The script emits only on monthlyCRSP rows. Proof: 273,523/273,523 extras verified off-row against monthlyCRSP.parquet; 8/8 sampled cells are past the permno's final CRSP row; values/misses are otherwise exact (beyond_tol=0, missing=0). Note VolSD's spec fixed this exact class with crsp_only and its pre-fix extra count (274,939) is nearly identical to std_turn's 273,523. Fix: mask std_turn output to monthlyCRSP row presence (crsp_only), keeping keep-when-size-missing only on-row; residual should then collapse to the registered row-window-vs-calendar-window family."
+    },
+    {
+      "factor": "tang",
+      "verdict": "closed_registered_deviation",
+      "reasoning": "Measured residual (beyond_tol=0, max=0, missing=38,118, extra=70,320) matches the register digit-for-digit: p1_deviation_register.md section B 'GP, tang \u2014 point-in-time industry classification' documents 'joint values bit-identical; support differs by ... 38,118/70,320 cells (tang)', and the tang entry is marked lookahead_confirmed. beyond_tol=0/max=0 confirms all jointly-present values are bit-identical, so the entire residual is the documented support difference from the engine's point-in-time sich-based manufacturing screen vs the reference's retroactive header industry code. Numbers match exactly, so no cell-level spot-check ambiguity remains.",
+      "next_action": "None \u2014 register entry is accurate as written (38,118 missing / 70,320 extra support cells, values bit-identical on joint support)."
+    }
+  ]
+}

@@ -1,0 +1,1216 @@
+{
+  "_meta": {
+    "generated": "2026-07-23",
+    "source": "16-agent evidence-based reconciliation: engine trees vs OSAP scripts, cell-level proofs",
+    "purpose": "per-factor fix list for the correctness reconciliation (task #10 extended)",
+    "final7_merged": "2026-07-24"
+  },
+  "factors": [
+    {
+      "factor": "Accruals",
+      "discrepancy_type": [
+        "formula_error",
+        "timing_lag_shift"
+      ],
+      "evidence": "Script Accruals.py L90-99 subtracts depreciation: (...) - df['dp'], then / ((at+lag_at)/2). Engine tree (p1_factor_specs.py) has only DELTA(act)-DELTA(che)-(DELTA(lct)-DELTA(dlc)-DELTA(fillna(txp,0))) over avg assets - NO dp term. Sampled IBM (12490) 1990-01: engine=0.059696 == no-dp formula 0.059696; oracle=0.003072 == with-dp formula 0.003072 (dp=3871); 1990-06: engine=-0.014791 vs oracle=-0.071035, again exactly matching no-dp vs with-dp. This mis-formula explains 2.98M/3.18M divergent cells. Secondary: 15,359 missing-in-engine cells come from the script's POSITION-based groupby(permno).shift(12) over gappy m_aCompustat rows: cell (permno 28388, 1966-06) oracle=-0.0031411229 exactly reproduced by the positional lag that lands on 1965-01 (17 calendar months back); engine's calendar 12-month wide-grid lag is NaN there.",
+      "proposed_fix": "Corrected tree: DIV( SUB( SUB( SUB(DELTA(act,12), DELTA(che,12)), SUB(SUB(DELTA(lct,12), DELTA(dlc,12)), DELTA(FILLNA(txp,0),12)) ), VAR(m_aCompustat.dp) ), DIV(ADD(at, LAG(at,12)), 2) ). I.e. add the missing SUB(..., dp) around the working-capital term. The positional-vs-calendar lag residual (15k cells, oracle uses stale >12mo-old data across Compustat gaps) is an oracle artifact of position shift; accept as known mask or demote if exact parity is required.",
+      "confidence": "certain"
+    },
+    {
+      "factor": "BookLeverage",
+      "discrepancy_type": [
+        "formula_error"
+      ],
+      "evidence": "Engine tree = LOG(DIV(m_aCompustat.at, m_aCompustat.ceq)). Script BookLeverage.py L72-97: txditc.fillna(0); tempPS=pstk->pstkrv->pstkl; tempSE=seq->(ceq+tempPS)->(at-lt); BookLeverage = at/(tempSE+txditc-tempPS) with be==0 -> NaN, and NO log despite the FF1992 'Ln(A/BE)' comment. Sampled IBM 1990-01: engine=0.614438 == log(at/ceq)=log(1.848617); oracle=1.654967 == at/BE. All 3,319,674 both-valued cells diverge. Misses (201,033): sample of 3000 -> 1192 have ceq NaN but script fallback computes via seq or at-lt (e.g. permno 22779 1951-06: seq/ceq NaN, oracle=54.8/(54.8-28.225)=2.0620885), 1808 have at/ceq<=0 so engine log() is NaN while script keeps the negative ratio. Extras (446, max_abs=Infinity): e.g. permno 27975 1973-07 ceq=0 -> engine log(at/0)=inf; script be==0 guard -> NaN.",
+      "proposed_fix": "Drop LOG entirely and rebuild denominator with fallbacks: PS = COALESCE(pstk, pstkrv, pstkl); SE = COALESCE(seq, ADD(ceq, PS), SUB(at, lt)); BookLeverage = DIV(at, ZERO_TO_NULL(SUB(ADD(SE, FILLNA(txditc,0)), PS))). Note NaN propagation must match the script: PS NaN makes the ceq+PS branch and the final be NaN even when SE came from seq (COALESCE(seq,...) then SUB(...,PS) reproduces this).",
+      "confidence": "certain"
+    },
+    {
+      "factor": "AnalystRevision",
+      "discrepancy_type": [
+        "formula_error",
+        "fill_domain",
+        "universe_coverage"
+      ],
+      "evidence": "Script AnalystRevision.py L43 restricts IBES to fpi=='1' before the ratio meanest/lag1(meanest). Engine tree is DIV(meanest, LAG(meanest,1)) on the generic var panel, and DatasetStore.get for LINKED_TICKER_MONTHLY_DATASETS (p1_factor_engine.py L416-431) pivots IBES_EPS_Unadj with NO fpi filter and aggfunc='last' - the last row per ticker-month is the fpi='6' (quarterly) row. Sampled IBM/tick BELW->IBM 1994-05: file rows are fpi0=9.00, fpi1=2.94, fpi2=4.44, fpi6=0.69; engine=6.900000 == 0.69/0.10 (fpi6 ratio), oracle=1.330317 == 2.94/2.21 (fpi1 ratio); every sampled month matches this pattern (engine col 'lastany_ratio' == engine output exactly). Explains 1.28M/1.91M divergent cells and max_abs=Infinity (fpi6 meanest hits 0). Extras (224,519): 967/1000 sampled extra cells are permno-months absent from SignalMasterTable (unfiltered CRSP universe + link-table join). Misses (9,701): script positional shift(1) over SMT gaps vs engine calendar lag.",
+      "proposed_fix": "Add a row-filter to the var node: VAR(IBES_EPS_Unadj, meanest, filter: fpi=='1') - or equivalently make the DatasetStore linked-ticker loader accept per-spec predicates and register IBES_EPS_Unadj.meanest with fpi=='1' for this factor. Keep the DIV/LAG(1) tree. Then mask output to the SignalMasterTable universe to remove the extra cells.",
+      "confidence": "certain"
+    },
+    {
+      "factor": "BM",
+      "discrepancy_type": [
+        "formula_error",
+        "fill_domain",
+        "universe_coverage"
+      ],
+      "evidence": "Script BM.py L51-62: me_datadate = mve_permco.shift(6) kept ONLY where the 6-back month equals the datadate month, then unlimited groupby(permno).ffill() - market equity is FROZEN at fiscal-year-end and carried forward. Engine op _op_market_equity_matched_to_datadate (p1_factor_engine.py L762-766) literally does `_ = datadate; return _op_lag(x, 6)` - a plain rolling 6-month lag. Sampled IBM 1990: oracle constant -0.620748 Jan-May (frozen Dec-1988 FYE me), updating to -0.357246 at 1990-06; engine changes EVERY month (-0.558646, -0.576956, -0.488585, ...) and equals log(ceqt/mve_crsp_lag6) exactly each month; engine==oracle only in June when lag6 happens to land on the datadate month. Explains 2.45M/2.71M divergent cells. Extras (350,559): engine emits values for any month with ceqt & lag6-mve on the unfiltered CRSP grid, while oracle requires a prior successful datadate match within the SMT (right-join) universe.",
+      "proposed_fix": "Implement the op's declared semantics: me = LAG(mve_permco, 6); me = me.where(month(t-6) == month(datadate at t)); me = ffill(me) per permno (unlimited); BM = LOG(DIV(ceqt, me)). Use SMT mve_permco/universe (sampled values match monthlyCRSP mve_permco for IBM, so the source panel is fine; the mask to SMT rows removes extras). Caveat: the script's shift(6) is positional over SMT rows, so firms with listing gaps mis-match in the oracle - residual cells after the fix are oracle artifacts of position shift.",
+      "confidence": "certain"
+    },
+    {
+      "factor": "AnalystValue",
+      "discrepancy_type": [
+        "timing_lag_shift",
+        "universe_coverage",
+        "mean_denominator"
+      ],
+      "evidence": "Engine _prepare_analyst_value_signals (p1_factor_engine.py L1372-1386) builds its June panel as IBESCRSPLinkingTable INNER-merged with monthlyCRSP and m_aCompustat, then l12_ceq = groupby(permno).shift(1) over those June rows; the script (ZZ1 L91-142,156-172) uses the FULL SignalMasterTable June panel (left joins), so shift(1) always reaches the true previous June. Where a permno's first (or a gap) year in the link table, engine ceq_ave collapses to ceq instead of (ceq+prior_ceq)/2. Proven for permno 17559 (in link table only from 1984; SMT June rows from 1981): June-1984 engine golden 0.65401775 == recomputation with ceq_ave=ceq=6.777; oracle 0.6589706 == recomputation with ceq_ave=(6.777+6.055)/2=6.416 (exact to 7 digits). Whole first-IBES-year cohort diverges: all 441 divergent permnos at 1976-06..1977-05, then ~21/yr (link-table entry/gap years, e.g. 17559 again at 1995 after its 1994 link gap). 23,499 of the 23,667 divergent AOP cells are the same cells divergent in AnalystValue (shared ceq_ave). Extras (95,430): 1493/1500 sampled extra cells are permno-months not in SignalMasterTable.",
+      "proposed_fix": "In _prepare_analyst_value_signals, build the June base panel from the full CRSP/SMT permno-June universe (left-join the IBES link/estimates and Compustat like the script) so l12_ceq=shift(1) lands on the true prior June; equivalently compute l12_ceq as the calendar 12-month lag of June ceq from m_aCompustat independent of IBES coverage. Then mask final output to the SMT universe to remove extras.",
+      "confidence": "certain"
+    },
+    {
+      "factor": "AOP",
+      "discrepancy_type": [
+        "timing_lag_shift",
+        "universe_coverage",
+        "mean_denominator"
+      ],
+      "evidence": "Shares _prepare_analyst_value_signals with AnalystValue - identical root cause. Same sampled proof, permno 17559 June-1984: engine AOP golden matches recomputation with ceq_ave=ceq (AOP=0.2165258), oracle matches ceq_ave=(ceq+prior_June_ceq)/2 (AOP=0.1483313); AOP is more sensitive than AnalystValue because ceq_ave drives ROE=ibcom/ceq_ave which enters IntrinsicValue (AOP denominator), hence max_abs=2399.8 when IntrinsicValue is near zero. 23,499 of 23,667 divergent cells coincide with AnalystValue's divergent cells; extra=95,430 cells are the same non-SMT universe cells (99.5% of sampled extras absent from SignalMasterTable).",
+      "proposed_fix": "Same fix as AnalystValue (one shared helper): June base panel from full SMT/CRSP June rows with left-joined IBES so l12_ceq/ceq_ave match the script, plus SMT universe mask on output. No tree change needed beyond the helper.",
+      "confidence": "certain"
+    },
+    {
+      "factor": "AbnormalAccruals",
+      "discrepancy_type": [
+        "formula_error",
+        "fill_domain",
+        "universe_coverage"
+      ],
+      "evidence": "(1) Value divergence (327,285 cells, constant within 12-month blocks = annual residual level): engine _trim_by_group (p1_factor_engine.py L1258-1272) trims temp vars at 0.1/99.9% using pandas quantile (linear interpolation); script winsor2 polars path (winsor2.py L128-152) uses polars .quantile() whose default interpolation is 'nearest' -> different trim thresholds -> different regression samples -> whole (fyear,sic2) group's residuals shift. Proven exactly for IBM (12490), fyear 1971, sic2=73: rebuilt regression with linear-interp trim gives residual -0.04706907 (44 obs) == engine golden -0.047069; nearest-interp trim gives -0.02899945 (45 obs) == oracle -0.028999. (2) Misses (123,740): script expands via fill_date_gaps_pl + UNLIMITED forward-fill to 12mo past the LAST annual obs (ZZ2 L215-229), carrying stale residuals through null-residual years - permno 58413's oracle holds -0.11658 continuously from 1986-06 to 2024-12 (38 years) while engine's _expand_hold_months(12)+dropna (L1703-1704) goes NaN after 1986-05; 1244/2000 sampled miss cells are >=12 months after the engine's last value. (3) Extras (11,601): engine takes exchcd from unfiltered monthlyCRSP (L1666-1671) with pandas boolean semantics, script left-joins SMT exchcd and polars filter(~((exchcd==3)&(fyear<1982))) DROPS null-exchcd rows pre-1982 (Kleene null); permno 58413 1977-06: monthlyCRSP exchcd=2.0, SMT row absent -> engine valued 1977-1981, oracle NaN.",
+      "proposed_fix": "Three changes in _op_abnormal_accruals_signal: (a) trim with interpolation='nearest' quantiles in _trim_by_group (or replicate polars quantile) - fixes the bulk value divergence; (b) replace _expand_hold_months(...,12)+dropna with the script's fill semantics: per-permno monthly backbone from first to last annual time_avail_m +12mo padding, forward-fill AbnormalAccruals without limit (do NOT drop null-residual annual rows before filling); (c) source exchcd from SignalMasterTable and drop rows where exchcd is null AND fyear<1982 to mirror polars Kleene filtering. Note (b) reproduces an oracle quirk (decades-stale values) - if undesired, flag as oracle_artifact instead and keep the 12-month hold deliberately.",
+      "confidence": "certain"
+    },
+    {
+      "factor": "BrandInvest",
+      "discrepancy_type": [
+        "formula_error",
+        "oracle_artifact"
+      ],
+      "evidence": "Engine custom op _op_brand_invest_signal (p1_factor_engine.py L1548-1600) seeds BrandCapital[first_pos]=xad/0.6 and starts the recursion at first_pos+1, preserving the seed. Oracle script BrandInvest.py L104-112 runs the recursion 'for i in range(1, len(gvkey_data))' unconditionally, so when the first non-missing xad is NOT the gvkey's first row (rows before it are seeded 0, L91), the xad/0.6 seed is OVERWRITTEN by 0.5*0+tempxad = xad (i.e. effective seed = xad, not 1.667*xad). Proven on IBM (permno 12490, first non-missing xad at row position 34, fyear 1984, xad=538): golden engine 1996-06 = 101086.40, oracle = 101122.62; recomputing both variants by hand from a_aCompustat reproduces each side exactly (seed-preserved variant 101086.399784 vs recursion-overwrite variant 101122.620392; fyear1996: 73760.38 vs 73767.95 both matching). Difference decays as 0.5^k after the seed year, so all months of affected gvkeys (any firm whose xad history starts after its Compustat history, ~29% of cells: 141,461/489,969) stay beyond rtol=1e-5. Both sides carry 580 identical inf cells (at==0); miss_cand=12 is negligible.",
+      "proposed_fix": "In _op_brand_invest_signal replicate the script's recursion exactly: initialize brand_capital = zeros (not NaN), set brand_capital[first_pos]=xad/0.6, then run the recursion for i in range(1, len(group)) over ALL rows (so a seed at position>0 is overwritten to tempxad[i]), then mask rows with fyear < FirstNMyear and rows with xad NaN, then divide by at. Note: the oracle behavior is itself a quirk (the paper's seed xad/0.6 only survives for firms whose very first Compustat year has non-missing xad) faithfully inherited from Stata's sequential replace; document it as an oracle artifact being matched deliberately.",
+      "confidence": "certain"
+    },
+    {
+      "factor": "CBOperProf",
+      "discrepancy_type": [
+        "formula_error",
+        "universe_coverage",
+        "fill_domain"
+      ],
+      "evidence": "Engine tree = nonfinancial_only(div(sub(sub(revt,cogs),fillna(xsga,0)),at), sic@m_aCompustat) \u2014 plain operating profitability. Script CBOperProf.py L118-129 computes the Ball et al. cash-based formula: (revt-cogs-(xsga-xrd)) - d12(rect) - d12(invt) - d12(xpp) + d12(drc+drlt) + d12(ap) + d12(xacc), all 11 inputs fillna(0) (L74-88), scaled by at; then L136-144 nulls where shrcd>11 | mve_c missing | BM=log(ceq/mve_permco) missing | at missing | 6000<=sicCRSP<7000. Proven on IBM 2000-01: engine=0.158409 which equals (revt-cogs-xsga)/at recomputed from m_aCompustat exactly; oracle=0.080023 which equals the full cash-based formula recomputed exactly (2000-06: 0.185542 vs 0.233751, same match). 99% of both-valued cells differ (2,191,974/2,208,062); extra=694,913 are cells the script's shrcd/BM/mve_c/sicCRSP exclusions remove but the engine keeps (engine masks only by m_aCompustat sic, not sicCRSP, and has no shrcd/BM/mve gate).",
+      "proposed_fix": "Rebuild tree: DIV( ADD( SUB(SUB(fillna(revt,0),fillna(cogs,0)), SUB(fillna(xsga,0),fillna(xrd,0))), NEG(DELTA(fillna(rect,0),12)), NEG(DELTA(fillna(invt,0),12)), NEG(DELTA(fillna(xpp,0),12)), DELTA(ADD(fillna(drc,0),fillna(drlt,0)),12), DELTA(fillna(ap,0),12), DELTA(fillna(xacc,0),12) ), at) then mask: shrcd in (10,11) [SignalMasterTable/monthlyCRSP], mve_c notna, positive ceq/mve_permco (BM=log defined), at notna, and NOT(6000<=sicCRSP<7000) using sicCRSP not Compustat sic. CRITICAL fill-domain detail: the fillna(...,0) must be restricted to months where the permno exists in SignalMasterTable (zero-fill within universe rows only), otherwise DELTA(...,12) manufactures nonzero values across the whole wide grid where the script's lag would be NaN (no SMT row at t-12); e.g. fillna(var,0).where(smt_presence_mask).",
+      "confidence": "certain"
+    },
+    {
+      "factor": "Cash",
+      "discrepancy_type": [
+        "timing_lag_shift",
+        "universe_coverage",
+        "oracle_artifact"
+      ],
+      "evidence": "Engine tree = div(cheq@m_QCompustat, atq@m_QCompustat) on the standard m_QCompustat time_avail_m panel. Script Cash.py L67-91 re-times availability from the earnings ANNOUNCEMENT date: time_avail_m = month-start of rdq, each quarterly row expanded to rdq-month +0/+1/+2, overlaps resolved keeping newest rdq; then inner-joins SignalMasterTable on gvkey+month (L109-114) and requires atq>0 (L122). Proven on IBM: quarter with rdq=2000-01-19 (cheq/atq=0.066644) appears in ORACLE at 2000-01..2000-03 but in ENGINE only at 2000-03..2000-05 (engine 2000-01=0.070583, the prior quarter announced 1999-10-20; oracle 2000-01=0.066644) \u2014 the engine lags the oracle by ~2 months because standard m_QCompustat time_avail_m is more conservative than rdq-month. Both sides use identical values (cheq/atq matches exactly), pure timing shift explains cells_beyond_tol=1,078,194/2,236,149. extra=693,610: engine broadcasts via the m_aCompustat gvkey->permno map with no SMT inner-join and no atq>0 gate. Oracle also drops singleton gvkey-rdq groups (dup==1 filter quirk, L46-59) \u2014 an oracle artifact to replicate.",
+      "proposed_fix": "Not expressible with LAG on the standard panel (the rdq offset varies per quarter). Add an rdq-timed loader/op for m_QCompustat variables, e.g. RDQ_TIMED(var): dedup gvkey-rdq keeping dup==1 with atq notna (replicating the script's singleton-drop quirk), set month=month(rdq), expand +0/+1/+2 months, keep newest rdq per gvkey-month, broadcast to permnos via SignalMasterTable gvkey join. Then tree = DIV(RDQ_TIMED(cheq), POSITIVE_ONLY(RDQ_TIMED(atq))) masked to the SMT universe. If a new loader op is out of scope, demote to script.",
+      "confidence": "certain"
+    },
+    {
+      "factor": "ChEQ",
+      "discrepancy_type": [
+        "formula_error",
+        "timing_lag_shift"
+      ],
+      "evidence": "Engine tree = div(sub(ceq, lag(ceq,12)), lag(ceq,12)) = growth RATE (ratio-1). Script ChEQ.py L53-55: ChEQ = ceq/l12_ceq (ratio LEVEL) and only where BOTH ceq>0 and l12_ceq>0. Proven on IBM 2000-01: engine=-0.019321, oracle=0.980679, ceq=19186, ceq_l12=19564 -> ratio=0.980679, ratio-1=-0.019321; np.allclose confirms engine==ratio-1 and oracle==ratio for all 8 sampled months. Hence 100% of both-valued cells differ (2,974,683/2,974,683) with max_abs~1.000004 (the constant offset of 1). extra=138,285 = missing positivity gate: 6/6 sampled engine-only cells have ceq<=0 or l12_ceq<=0 (e.g. permno 56709 1977-04: engine=-0.68, ceq=-1.17, ceq_l12=-3.662; permno 28740 1969-01: engine=-32.61, ceq_l12=-0.127). Engine also has 60 inf cells (l12=0) vs oracle 0. miss_cand=11,817: script's lag is POSITIONAL shift(12) over gappy m_aCompustat rows (reaches >12 calendar months back for permnos with month gaps) vs engine's calendar shift on the wide grid \u2014 a secondary lag-domain mismatch.",
+      "proposed_fix": "Corrected tree: DIV(POSITIVE_ONLY(ceq), POSITIVE_ONLY(LAG(ceq,12))) \u2014 i.e. drop the SUB(...) numerator (ratio, not change) and gate both operands with positive_only (this also kills the inf cells since lag<=0 or lag=0 -> NaN). The residual 11.8k missing-in-engine cells stem from the script's positional-shift-over-gaps quirk (oracle artifact); matching it exactly would require replicating positional lags on the long m_aCompustat rows.",
+      "confidence": "certain"
+    },
+    {
+      "factor": "ChInvIA",
+      "discrepancy_type": [
+        "formula_error",
+        "mean_denominator",
+        "universe_coverage"
+      ],
+      "evidence": "Firm-level pchcapx is CORRECT in the engine: for IBM 2000-01 both sides imply firm pchcapx=0.028716 recomputed from m_aCompustat capx (capx vs 0.5*(l12+l24)). The divergence is (1) the industry mean: implied 2-digit-SIC mean subtracted by engine = 0.939165 vs oracle = 0.895597 (2000-01), because _op_industry_adjusted_mean (p1_factor_engine.py L887-900) averages over ALL wide-grid permnos with a value (unfiltered monthlyCRSP universe) while the script (ChInvIA.py L35, L92) averages over the SignalMasterTable INNER JOIN m_aCompustat universe (shrcd 10/11/12, exchcd 1/2/3) \u2014 a shifted group mean moves EVERY cell in the industry-month, explaining 2,257,121/2,666,062 divergent cells. (2) Division-by-zero is unguarded in the engine's div op (L688-689): golden engine panel contains 689,931 inf cells vs oracle 0 (script L76-79 and L84-89 map denominator==0 to NaN); these infs also poison the grouped mean of every industry-month they appear in, and explain max_abs=Infinity.",
+      "proposed_fix": "Two changes: (1) guard denominators: pchcapx = COALESCE( DIV(SUB(capx_c, avg), ZERO_TO_NULL(avg)), DIV(SUB(capx_c, LAG(capx_c,12)), ZERO_TO_NULL(LAG(capx_c,12))) ) where capx_c=COALESCE(capx, DELTA(ppent,12)) and avg=DIV(ADD(LAG(capx_c,12),LAG(capx_c,24)),2); additionally make _op_industry_adjusted_mean drop non-finite values before grouping. (2) restrict the industry-mean population to the script's universe: mask pchcapx to SMT membership (shrcd 10/11/12 & exchcd 1/2/3 & m_aCompustat presence) BEFORE the industry_adjusted_mean op, not after.",
+      "confidence": "certain"
+    },
+    {
+      "factor": "ChNAnalyst",
+      "discrepancy_type": [
+        "formula_error",
+        "timing_lag_shift",
+        "universe_coverage"
+      ],
+      "evidence": "Engine tree = numest/LAG(numest,1) - 1: a CONTINUOUS 1-month percent change (golden engine values range -0.97..26.0). Script ChNAnalyst.py L74-88: BINARY indicator vs 3 months ago \u2014 1 iff numest<numest_l3 (l3 notna), 0 iff numest>=numest_l3 (numest notna); oracle uniques are exactly {0,1}. Proven on permno 78908 2005-12: numest=4, numest_l3=6 -> oracle=1; engine=-0.20 (=4/5-1 month-over-month). 2006-06: numest=5>l3=4 -> oracle=0, engine=+0.25. Universe: script filters IBES to fpi=='1' (L33) \u2014 the engine's linked-ticker panel loader pivots ALL fpi rows with aggfunc='last' (p1_factor_engine.py L416-431), mixing forecast horizons; script excludes 1987-07..09 (L85-88) and keeps only the bottom 2 monthly size quintiles of mve_c (L92-102) \u2014 engine has neither, hence extra=1,782,372 (e.g. IBM permno 12490: oracle non-null count = 0 because IBM is never in the bottom size quintiles, engine has 587 valued months).",
+      "proposed_fix": "Rebuild as: base numest loaded from IBES_EPS_Unadj restricted to fpi=='1' (dataset variant or load-filter param); indicator = WHERE(numest < LAG(numest,3) & LAG notna, 1, WHERE(numest >= LAG(numest,3) & numest notna, 0, NaN)) \u2014 needs an LT_INDICATOR-style op with the script's asymmetric NaN handling; mask months 1987-07..1987-09 (year_filtered-style date-range-exclude op); apply size filter with max monthly mve_c quintile = 2 (existing size_filtered op with min_tercile=None, max_quintile=2, though pd.qcut vs pct-rank tie handling differs slightly). Given three new/modified ops are needed (fpi load filter, asymmetric indicator, date-range exclusion) plus qcut-exact quintiles, demote-to-script is the safer fix; otherwise implement the ops above.",
+      "confidence": "certain"
+    },
+    {
+      "factor": "ChTax",
+      "discrepancy_type": [
+        "formula_error",
+        "universe_coverage",
+        "oracle_artifact"
+      ],
+      "evidence": "Engine tree = DIV(DELTA(txtq,12), LAG(atq@m_QCompustat,12)) \u2014 QUARTERLY assets denominator. Script ChTax.py L83: ChTax = (txtq - l12_txtq)/l12_at where 'at' is ANNUAL total assets from m_aCompustat (L33-37, merged L50). Proven on IBM 2000-01: engine=0.002873=(867-638)/79719 (atq_l12), oracle=0.002810=(867-638)/81499 (annual at_l12); np.allclose confirms engine==f(atq_l12) and oracle==f(at_l12) across all 8 sampled months. miss_cand=200,492 explained: 6/6 randomly sampled missing-in-engine cells (e.g. permno 14461 1968-11, 22992 2024-06) have atq_l12=NaN while annual at_l12 is present (early/sparse quarterly balance-sheet coverage), so the engine's denominator kills cells the oracle keeps. max_abs=Infinity: both sides carry a few inf cells (engine 14 where atq_l12==0, oracle 34 where l12_at==0 \u2014 the script leaves /0 unguarded and save_predictor keeps inf, an oracle artifact). Secondary: engine's gvkey->permno broadcast uses drop_duplicates(gvkey,month) keep-first (L437-443) so multi-permno gvkeys get only one permno, vs script's merge onto per-permno m_aCompustat rows (extra=1,816 / part of miss).",
+      "proposed_fix": "Corrected tree: DIV(DELTA(txtq@m_QCompustat,12), LAG(at@m_aCompustat,12)) \u2014 swap the denominator to annual 'at' from m_aCompustat. Keep /0 unguarded (or map inf->NaN and accept 34 oracle-artifact inf cells as documented divergence). The inner-join universe (both m_aCompustat and m_QCompustat rows present) is naturally enforced by NaN propagation of txtq and at.",
+      "confidence": "certain"
+    },
+    {
+      "factor": "ChangeInRecommendation",
+      "discrepancy_type": [
+        "oracle_artifact",
+        "universe_coverage"
+      ],
+      "evidence": "Sampled HAL (permno 23819), 1999-03: engine=0.45, oracle=0.25. Raw IBES_Recommendations for ticker HAL show analyst amaskcd=0 issued TWO recs in 1999-03: anndats 1999-03-09 ireccd=3.0 and 1999-03-30 ireccd=2.0. Engine (p1_factor_engine.py L1471-1472) sorts by anndats before groupby.last() -> picks 2.0 -> firm mean 1.8 -> change = -(1.8-2.25) = +0.45 (matches engine exactly). Script (ChangeInRecommendation.py L31-35) calls groupby(...)['ireccd'].last() WITHOUT any sort, so 'last' is raw parquet file order, which here picks the chronologically EARLIER 3.0 -> mean 2.0 -> +0.25 (matches oracle exactly). The script's intent per its own comment ('last non-missing recommendation') is chronological, so the oracle side is the file-order-dependent quirk; only 55 cells, max_abs 2. Separately, extra=60546 cells: engine maps ticker->permno via IBESCRSPLinkingTable (engine L513-519, L2336) while script inner-merges to SignalMasterTable (script L53-59), which imposes the shrcd 10/11/12 / exchcd 1/2/3 universe.",
+      "proposed_fix": "Mask engine output to the SignalMasterTable permno-month universe (use SMT's tickerIBES-permno mapping instead of IBESCRSPLinkingTable) to kill the 60,546 extra cells. For the 55 value cells: either accept the engine (chronologically correct, document oracle_artifact) or, to reconcile exactly, drop 'anndats' from the sort in _prepare_recommendation_monthly and preserve raw file order before groupby.last().",
+      "confidence": "certain"
+    },
+    {
+      "factor": "CompEquIss",
+      "discrepancy_type": [
+        "formula_error",
+        "timing_lag_shift",
+        "fill_domain",
+        "universe_coverage"
+      ],
+      "evidence": "Sampled IBM (12490) 1995-01..1995-08. Oracle 1995-01 = -0.187076 == log(mve_c/mve_c_lag60) - rawBH where rawBH=(idx-idx_lag60)/idx_lag60 over ret lags 0..59 (script L47,55,58 subtracts the RAW buy-and-hold return, not its log); allclose(oracle, script_formula)=True. Engine 1995-01 = -0.245933 == log(mve_permco/mve_permco_lag60) - log(1+compound(ret, lags 1..60, fill 0)); allclose(engine, log-form lags1..60)=True, allclose with lags0..59)=False. So the tree (a) wraps the BH return in LOG(ADD(1,...)) which the script never does, and (b) compounds lags 1..60 instead of 0..59 (the proven systemic extra 1-month lag). 2,560,212 of 2,560,488 both-valued cells differ; max_abs 1949 because raw BH is unbounded while its log is small. Also: params fill_missing:0 zero-fills ret over the whole grid vs script's cumprod-skipna within listing span -> extra=576,557 cells; tree uses monthlyCRSP mve_permco while script uses SMT mve_c -- these differ on 74,572 SMT rows (dual-class permcos; verified SMT mve_c == monthlyCRSP mve_c, != mve_permco).",
+      "proposed_fix": "Corrected tree: SUB( LOG(DIV(mve_c, LAG(mve_c,60))), COMPOUND_RETURN(ret, lags=[0..59], raw, no +1/log wrapper) ) i.e. subtract the raw compounded return (prod(1+ret_{t-k}, k=0..59) - 1), switch the var from mve_permco to mve_c (monthlyCRSP mve_c), restrict fill_missing=0 to each permno's listed span (missing rets inside span act as 0, outside stay NaN), and mask output to the SignalMasterTable universe.",
+      "confidence": "certain"
+    },
+    {
+      "factor": "CompositeDebtIssuance",
+      "discrepancy_type": [
+        "formula_error",
+        "timing_lag_shift"
+      ],
+      "evidence": "Sampled IBM (12490) 1995-01..1995-08. Oracle 1995-01 = 0.714663 == log((dltt+dlc)_t/(dltt+dlc)_{t-60}) exactly (script L49 tempBD=dltt+dlc, L77 log(tempBD/l60_tempBD)). Engine = 0.411396 == log(dltt/dltt_lag60) - log(dltt/dltt_lag12) exactly (the tree's expression). The tree omits dlc entirely and subtracts a spurious 12-month log-growth term that appears nowhere in the script. 1,751,085/1,853,615 cells differ; max_abs=Infinity arises from log of 0 or negative ratios on the wrong formula. miss_cand=244,731: script L70-71 falls back to a POSITIONAL groupby.shift(60) of tempBD when no exact calendar t-60 row exists, so gapped panels still emit values; the engine's calendar-only LAG(...,60) yields NaN there.",
+      "proposed_fix": "Corrected tree: LOG( DIV( ADD(dltt,dlc), LAG(ADD(dltt,dlc), 60) ) ) \u2014 single term, includes dlc, no 12-month leg. To recover the 244k missing cells, the LAG op needs the script's positional-shift(60) fallback when the exact t-60 calendar row is absent (or accept the coverage loss / demote to script if the fallback is deemed irreducible).",
+      "confidence": "certain"
+    },
+    {
+      "factor": "ConvDebt",
+      "discrepancy_type": [
+        "formula_error"
+      ],
+      "evidence": "All 5,070 diff cells are engine=0 vs oracle=1, and ALL 5,070 have dc==0 with cshrc non-missing and !=0 (0 have dc<0, 0 have dc NaN). Sample permno 21397, 1985-06..1986-01: dc=0.0, cshrc=0.184 -> oracle=1, engine=0. Engine op _op_convertible_debt_indicator (p1_factor_engine.py L815-817) is `(dc > 0).where(dc.notna())` \u2014 it takes (dc, dltt, dlc) and DISCARDS dltt/dlc, never sees cshrc, and uses >0 instead of !=0. Script (ConvDebt.py L50-57) sets ConvDebt=1 if (dc notna & dc!=0) | (cshrc notna & cshrc!=0), else 0 (never NaN).",
+      "proposed_fix": "Change op signature to convertible_debt_indicator(dc, cshrc) with semantics: 1.0 where (dc.notna() & dc.ne(0)) | (cshrc.notna() & cshrc.ne(0)) else 0.0 on every m_aCompustat row (no NaN masking on dc); update the spec tree args from (dc, dltt, dlc) to (dc, cshrc).",
+      "confidence": "certain"
+    },
+    {
+      "factor": "DivOmit",
+      "discrepancy_type": [
+        "universe_coverage",
+        "timing_lag_shift"
+      ],
+      "evidence": "637 both-valued diffs (588 engine=0/oracle=1, 49 engine=1/oracle=0), max_abs=1. Sample permno 12076, 2008-12: engine=0 oracle=1; monthlyCRSP has 197 rows including 2008-08 which SignalMasterTable lacks (196 rows starting 2008-09), so every positional rolling(3/6/12/18/24) and shift(1/3/6/12) in the engine (_op_dividend_omission_flag, p1_factor_engine.py L2101-2153) is computed over a row sequence offset from the script's SMT rows. Additionally, the script's asrol (utils/asrol.py L59-70) gap-fills each permno's span via fill_date_gaps and RETURNS the filled frame (verified in the pandas wrapper L138-151), so all subsequent rolling sums AND shifts in DivOmit.py operate on calendar-aligned rows, while the engine's pandas rolling/shift are purely positional on unfilled monthlyCRSP rows. extra=1,041,130 = unfiltered monthlyCRSP universe vs SMT (shrcd/exchcd filter).",
+      "proposed_fix": "In the op: (1) build the base from the SMT universe (or mask output to SMT permno-months), and (2) reindex each permno to a complete monthly range over its [first,last] span before all rolling/shift calls so windows/lags are calendar-based (gap rows carry NaN divind, matching asrol's min_samples=1 NaN-skipping sums). The exact-equality cascade (sum==1, mean==1) is otherwise faithfully reproduced; if span-reindexing is not expressible, demote to script.",
+      "confidence": "likely"
+    },
+    {
+      "factor": "DivSeason",
+      "discrepancy_type": [
+        "formula_error",
+        "timing_lag_shift",
+        "universe_coverage"
+      ],
+      "evidence": "98,909 diffs (95,583 engine=0/oracle=1; 3,326 engine=1/oracle=0). Two proven mechanisms: (1) Stata missing semantics: permno 34649, 1962-07 (2 months after first dividend): all divpaid lags (2/5/8/11) are NaN; script uses stata_ineq_pd(lag,'>',0) (DivSeason.py L142-165; utils/stata_replication.py L385 maps NaN->+inf so NaN>0 is TRUE) -> oracle=1; engine uses plain `>0` (p1_factor_engine.py L2173-2177) -> False -> engine=0. (2) Calendar vs positional lags: permno 11703, 1941-02: SMT has a listing gap 1938-02..1941-01; script's asrol at L115 returns the GAP-FILLED frame (asrol.py fill_gaps=True inserts null rows that persist), so shift(2) lands on a gap row with divpaid=NaN -> NaN>0=True -> oracle=1; engine's positional shift(2) on unfilled rows reaches 1937-12 (divpaid=0) -> engine=0 (verified: both reconstructions show identical lag values 0.0 positionally, yet oracle=1). extra=540,975 from the monthlyCRSP base vs SMT; miss_cand=9,714 are oracle values on asrol-inserted gap months absent from the engine's row domain.",
+      "proposed_fix": "In _op_seasonal_dividend_indicator: (a) reindex each permno to a complete monthly span after the cd3<6 filters and BEFORE the divpaid_sum rolling and shift(2/5/8/11) calls (gap rows: divpaid=NaN); (b) replace every `divpaid_lagK > 0` with Stata semantics `(lag > 0) | lag.isna()`; (c) build from the SMT universe / mask output to SMT permno-months.",
+      "confidence": "certain"
+    },
+    {
+      "factor": "DivYieldST",
+      "discrepancy_type": [
+        "universe_coverage"
+      ],
+      "evidence": "The signal is a cross-sectional qcut tercile (script L112-120; engine L2196-2200), so extra names contaminate shared cells. Sampled month 2018-01: engine cross-section n=3,274 (unfiltered monthlyCRSP base from _prepare_monthly_stock_base, L1478-1492) vs oracle n=1,569 (SignalMasterTable, shrcd/exchcd filtered); engine positive-yield tercile counts 307/307/307 vs oracle 242/242/241; sampled cells 10294/10516/11043/11628/11762/11896/12068 all engine=2 vs oracle=3 and 10375 engine=1 vs oracle=2. Global diff pattern is dominated by engine one-tercile-low: 2->3: 26,226 cells, 1->2: 12,959, i.e. the engine's ~2x larger universe (heavy in small/OTC low-yield names) shifts qcut breakpoints upward. max_abs=3 = the 25 cells of 0-vs-3 type where the Edy1==0 mass assignment vs tercile disagrees. extra=428,559 cells from the same unfiltered universe.",
+      "proposed_fix": "Filter the base to the SignalMasterTable universe (shrcd 10/11/12, exchcd 1/2/3) INSIDE _op_divyieldst_signal BEFORE the div12 filter and the monthly qcut \u2014 output masking alone cannot fix this because the ranking itself is contaminated. This also aligns the positional shift(2/5/11) row sequences and removes the extra cells; residual diffs (miss_cand=319, a few 0-vs-tercile cells) should collapse once the cross-section matches.",
+      "confidence": "certain"
+    },
+    {
+      "factor": "DolVol",
+      "discrepancy_type": [
+        "formula_error",
+        "oracle_artifact"
+      ],
+      "evidence": "Script DolVol.py L30-34: DolVol = np.log(vol.shift(2) * abs(prc).shift(2)). Engine tree: rolling_mean(mul(abs(prc), vol), window_months=2) at time t (p1_factor_engine.py L774-776, min_periods=1) \u2014 no log, no lag. Sampled permno 12490 (IBM) 1990-01: engine=3452.516357 == rolling 2-mo mean of |prc|*vol (3452.5165 recomputed), oracle=8.001411 == log(vol_l2*|prc_l2|) (8.001411 recomputed); all 8 sampled months match each formula exactly. max_abs=Infinity: oracle contains 10,079 -inf cells (np.log(0) when lagged vol==0; script's dropna does not remove -inf) while engine is finite \u2014 a documented oracle quirk. miss_cand=1825 e.g. permno 10508 1926-04: oracle=-5.420485 from Feb lag-2 (vol=0.0001, prc=44.25) but engine rolling window (Mar,Apr) is all-NaN.",
+      "proposed_fix": "Corrected tree: LOG(LAG(MUL(VAR(monthlyCRSP.vol), ABS(VAR(monthlyCRSP.prc))), 2)). Decide policy for vol==0 cells (oracle keeps -inf); either replicate or mask to NaN and document as oracle_artifact.",
+      "confidence": "certain"
+    },
+    {
+      "factor": "DownRecomm",
+      "discrepancy_type": [
+        "universe_coverage",
+        "oracle_artifact"
+      ],
+      "evidence": "Only 14/463,532 both-valued cells differ; all 62,230 extra engine cells are absent from SignalMasterTable (verified: 0 of 62,230 present in SMT) \u2014 engine maps ticker->permno via IBESCRSPLinkingTable inner join (p1_factor_engine.py L2083, L513-519) vs script DownRecomm.py L59 inner join with SignalMasterTable. The 14 value diffs: script L31-35 takes groupby(...)['ireccd'].last() in FILE order without sorting by anndats; engine L1471 sorts by anndats first. Sampled DANB/permno 81695 2002-05: file has anndats 2002-05-31 (ireccd=3.0) before 2002-05-20 (ireccd=2.0), so script's 'last' rec = 2.0 (the OLDER rec) -> oracle=0; engine's anndats-sorted last = 3.0 -> engine=1. Engine is chronologically correct; oracle value is a script sort-order artifact.",
+      "proposed_fix": "Mask engine output to SignalMasterTable permno-month membership (or switch _op_recommendation_change_indicator's merge to the SMT-derived map). Keep the anndats sort but document the 14 residual cells as oracle_artifact (script's unsorted .last() is file-order dependent).",
+      "confidence": "certain"
+    },
+    {
+      "factor": "EarnSupBig",
+      "discrepancy_type": [
+        "formula_error",
+        "universe_coverage",
+        "scale_units"
+      ],
+      "evidence": "Max cell (1990-03, permno 10018): oracle=-0.34641975; replicating script (SMT universe, relrank on ALL industry firms, SD<1e-8 -> NaN) gives -0.346419758 exactly. Emulating engine (_op_industry_big_mean L1188-1207: valid = values.notna() & size.notna() & industry.notna(), so mve rank computed only among firms WITH valid surprise; _op_seasonal_surprise_zscore L1154 masks sd>1e-10 vs script EarnSupBig.py L91-96 MIN_SD_THRESHOLD=1e-8) gives 5,113,849.557 == engine golden 5.1138495e6: big-set member permno 11723 has sd=3.293e-10 (passes 1e-10, fails 1e-8) -> z=4.96e8 poisons the industry mean. Script big set n=142 vs engine n=97 for the same industry-month (rank universe differs). miss_cand=922,355 because engine writes the industry mean only to firms whose OWN surprise is valid (out.loc[date, mapped.index], L1204-1206) while script L148 left-merges the mean onto ALL non-big industry firms.",
+      "proposed_fix": "Rewrite _op_industry_big_mean: (1) rank mve_c with valid = size.notna() & industry.notna() (do NOT require values.notna()); (2) compute big-firm mean over rank>=0.7 members with non-NaN surprise; (3) assign the mean to every industry firm, then NaN out firms with rank>=0.7; (4) restrict columns/rows to SignalMasterTable membership. In seasonal_surprise_zscore add a min_sd param and use 1e-8 for EarnSupBig (script uses 1e-8 here but 1e-10 in EarningsSurprise.py). Also feed the surprise input masked to SMT (see EarningsSurprise finding).",
+      "confidence": "certain"
+    },
+    {
+      "factor": "EarningsStreak",
+      "discrepancy_type": [
+        "universe_coverage"
+      ],
+      "evidence": "Only 7/1,229,279 both-valued cells differ; 111,355 extras of which only 337 are in SignalMasterTable. Engine _op_earnings_streak_signal (L2475-2498) builds the monthly panel from IBESCRSPLinkingTable (month-continuous) vs script EarningsStreak.py L66-72 SignalMasterTable (has gaps). Proven for permno 18103/BSGM: streak announcements at 2024-05 (surp=-0.045161) and 2024-08 (surp=-0.476190); SMT lacks rows for 2024-06..09 so the script never sees the August announcement and carries -0.045161 to 2024-10/11 (== oracle), while the link table has 2024-08 so the engine picks up -0.476190 (== engine golden at 2024-10/11). Formula logic (surp calc, streak filter, ffill, 6-month staleness) otherwise matches.",
+      "proposed_fix": "In _op_earnings_streak_signal, replace the IBESCRSPLinkingTable panel with the SignalMasterTable permno-month-tickerIBES panel (or inner-join the link panel to SMT membership BEFORE the ffill/staleness steps, not after), so announcement pickup and forward-fill run on the script's row set.",
+      "confidence": "certain"
+    },
+    {
+      "factor": "EarningsSurprise",
+      "discrepancy_type": [
+        "universe_coverage"
+      ],
+      "evidence": "Formula matches (IBM permno 12490 has 0 diff cells; engine's NaN-skipping drift mean and ddof=1 SD with sd>1e-10 mask replicate script L62-91). Diffs concentrate in permnos with SMT gaps: permno 80655 has 31 permno-months with epspxq via engine's m_aCompustat gvkey map (store.get L433-452) that are ABSENT from SignalMasterTable (e.g. 1997-04..1997-10, 2002-08..). Those months feed the 3-24m drift/SD lag windows: at 1997-11 oracle=3.771236 == z-score recomputed from SMT-restricted inputs, engine=2.423593 == z-score recomputed from engine-map inputs (all 8 sampled months 1997-11..1998-06 match exactly, incl. extra output months 1998-04..06 where oracle is NaN). Plus 294,799 extra output cells (script requires SMT inner join, L24-38).",
+      "proposed_fix": "Mask the epspxq input panel to SignalMasterTable permno-month membership BEFORE seasonal_surprise_zscore runs (universe mask on inputs, not just outputs), then also mask the output to SMT. E.g. tree: seasonal_surprise_zscore(MASK_UNIVERSE(VAR(m_QCompustat.epspxq))) with MASK_UNIVERSE = SMT permno-month indicator.",
+      "confidence": "certain"
+    },
+    {
+      "factor": "ExchSwitch",
+      "discrepancy_type": [
+        "formula_error",
+        "fill_domain",
+        "universe_coverage"
+      ],
+      "evidence": "Engine _op_exchange_switch_indicator (L769-771): (x != lag(x,12)).astype(float32) \u2014 compares only the single 12-month-ago value, ignores switch direction, and NaN != anything -> True -> 1.0. Result: 42,136,697 extra cells, ~98% equal 1.0 in random sample, including permno 75860 at 1926-02 (=1.0) whose CRSP history starts 1989-10 \u2014 the op fires on the empty grid (NaN vs NaN). Script ExchSwitch.py L30-49: switch = (exchcd==1 & any of lags 1..12 in {2,3}) | (exchcd==2 & any lag==3), on SignalMasterTable. Value diff sample permno 29103 1979-03: exchcd=3 (NASDAQ), lag12=NaN -> engine=1.0, oracle=0.0 (current exchcd 3 can never be a qualifying switch).",
+      "proposed_fix": "Replace op: compute lags 1..12 of exchcd; cond1 = (x==1) & any(lag_i.isin([2,3])); cond2 = (x==2) & any(lag_i==3); out = (cond1|cond2).astype(float) where x.notna(), NaN elsewhere; then mask to SignalMasterTable permno-months (script emits 0/1 for every SMT row). Use SMT/monthlyCRSP exchcd consistently.",
+      "confidence": "certain"
+    },
+    {
+      "factor": "ExclExp",
+      "discrepancy_type": [
+        "universe_coverage"
+      ],
+      "evidence": "Formula identical (int0a - epspiq, 1%/99% clip; script ExclExp.py L45-50 vs engine _op_excluded_expenses_signal L2368-2383). But winsor quantiles are GLOBAL statistics computed on different samples: script sample = SMT inner-join gvkey + tickerIBES -> bounds (-1.81, 2.70); engine sample = m_QCompustat x m_aCompustat gvkey map x IBESCRSPLinkingTable left-joins -> bounds (-1.96, 2.95). Of 35,366 beyond-tol cells, 16,035 are engine=-1.96 vs oracle=-1.81 and 15,775 are engine=2.95 vs oracle=2.70 (the clip bounds themselves); remainder are values between the two bounds clipped on one side only; max_abs=0.25 == 2.95-2.70. 196,791 extras from the broader merge universe.",
+      "proposed_fix": "In _op_excluded_expenses_signal, filter the merged frame to SignalMasterTable (permno, gvkey, tickerIBES, time_avail_m) membership BEFORE computing the 1%/99% quantiles and clipping, then output only SMT rows. The clip bounds then reproduce (-1.81, 2.70) and both the tail diffs and extras disappear.",
+      "confidence": "certain"
+    },
+    {
+      "factor": "FirmAge",
+      "discrepancy_type": [
+        "universe_coverage",
+        "formula_error"
+      ],
+      "evidence": "Engine op _op_firm_age (p1_factor_engine.py L929-935) counts cumsum of non-NaN monthlyCRSP prc and builds crsp_time = grid position+1 (grid starts 1925-12); script (FirmAge.py L31, L34-40) counts SMT row presence (groupby(permno).cumcount()+1) and tempcrsptime = round((t-1926-07-01).days/30.44)+1. Sampled IBM (permno 12490, CRSP & SMT both start 1925-12): oracle 1926-01=2.0, 1926-02=3.0... while engine=NaN for the entire early unbroken run \u2014 engine's original-firm mask fires because age==position+1 from the 1925-12 grid start, whereas the script's 1926-07-anchored counter never equals IBM's age (at 1926-07 age=8 vs tempcrsptime=1), so oracle keeps IBM. Later IBM cells differ by a constant offset (1168 cells beyond tol; engine loses 2 counts at IBM's 2 NaN-prc months which the SMT row-counter still counts). Max drift: permno 37560 at 2005-04: engine=387 (387 non-NaN prc CRSP months) vs oracle=1 (only 1 SMT row <= t) = max_abs 386. extra=973999 cells are non-SMT permno-months (unfiltered monthlyCRSP universe).",
+      "proposed_fix": "firm_age must (1) count presence in the SignalMasterTable universe, not non-NaN prc: age = cumsum(SMT_presence_mask).where(SMT_presence_mask); (2) compute crsp_time from calendar dates, not grid position: round(((index - Timestamp('1926-07-01')).days)/30.44)+1, then mask age==crsp_time. Requires exposing an SMT-presence panel (SignalMasterTable.parquet row-exists mask) as a var in the store; if the store cannot carry SMT presence, demote to script.",
+      "confidence": "certain"
+    },
+    {
+      "factor": "ForecastDispersion",
+      "discrepancy_type": [
+        "fill_domain",
+        "universe_coverage"
+      ],
+      "evidence": "DatasetStore LINKED_TICKER_MONTHLY_DATASETS branch (p1_factor_engine.py L416-431) pivots IBES_EPS_Unadj with aggfunc='last' over ALL forecast horizons \u2014 no fpi=='1' filter, no fpedats.notna() filter \u2014 while the script (ForecastDispersion.py L44-47) keeps only fpi=='1' & fpedats non-null. Sampled AAPL 1995-03: raw IBES has 4 rows (fpi 0/1/2/6); engine=0.103093 = 0.10/0.97 = the fpi='6' (quarterly) row picked by aggfunc='last', oracle=0.076749 = 0.34/4.43 = the fpi='1' row. This corrupts nearly every cell (1,557,858 of 1,619,857 both-valued beyond tol, max_abs=Inf from meanest==0 rows pairing differently). extra=191719 from the engine's IBESCRSPLinkingTable inner-join universe vs the script's SMT-left-join universe.",
+      "proposed_fix": "Filter IBES_EPS_Unadj rows to fpi=='1' AND fpedats.notna() before the ticker-link merge and pivot. Concretely: add a row-filter param to var nodes (e.g. {kind:'var', dataset:'IBES_EPS_Unadj.parquet', name:'stdev', filter:{fpi:'1', fpedats:'notnull'}}) honored in DatasetStore.get; tree stays DIV(stdev_fpi1, ABS(meanest_fpi1)). Note other IBES consumers need per-factor fpi choices, so the filter must be per-node, not global.",
+      "confidence": "certain"
+    },
+    {
+      "factor": "Frontier",
+      "discrepancy_type": [
+        "universe_coverage"
+      ],
+      "evidence": "_op_frontier_signal (p1_factor_engine.py L1720-1731) bases the panel on unfiltered monthlyCRSP; script (Frontier.py L48-70) bases it on SignalMasterTable. At 1990-01 the engine cross-section has 137 permnos not in SMT (shrcd 14/18/21/30/31 ADRs/REITs/units on exchcd 1/2/3), which enter the pooled 60-month training regression and shift the fit for EVERY stock. Proof by replication: rerunning the script's exact logic on the SMT universe for 1990-01 gives IBM Frontier = -0.35796345, matching oracle -0.35796344 to 1e-8, while engine = -0.75912476. Hence 1,218,262 of 1,221,162 both-valued cells beyond tol; extra=92222 non-SMT rows.",
+      "proposed_fix": "In _op_frontier_signal, load SignalMasterTable.parquet [permno, time_avail_m, mve_permco, sicCRSP] as the base panel instead of monthlyCRSP, then inner-merge m_aCompustat as now. (Also align the minimal-training-rows gate: script uses len(train)>=3, engine uses len(reg_vars)+2=9 \u2014 immaterial in practice.) The op is already script-shaped; if SMT loading is off-limits for native ops, demote to script.",
+      "confidence": "certain"
+    },
+    {
+      "factor": "GrSaleToGrInv",
+      "discrepancy_type": [
+        "formula_error",
+        "timing_lag_shift",
+        "universe_coverage"
+      ],
+      "evidence": "(1) Div-by-zero: engine _op_growth_difference_fallback (p1_factor_engine.py L945-950) uses raw division, so denominator==0 yields +/-inf which is notna and blocks the fallback; script (GrSaleToGrInv.py L77-88, L97-109) maps 0-denominator to NaN then substitutes the 12m fallback. Counted 35,008 inf cells in engine output vs 0 in oracle (explains max_abs=Infinity and most of extra=34912). (2) Lag semantics: script lags are positional shift(12/24) over observed m_aCompustat rows; engine LAG is calendar over the monthly grid. Sampled permno 18331 at 1954-06: row-based l24 exists (sale 290.4, invt 30.4, actually >24 calendar months back across a coverage gap; calendar t-24 has no row) -> oracle primary = (336-293.9)/293.9 - (42.7-39.1)/39.1 = 0.05117439 (matches oracle exactly); engine calendar l24=NaN -> falls back to 12m formula = (336-297.4)/297.4 - (42.7-47.8)/47.8 = 0.23648609 (matches engine exactly). ~9.8k such cells (0.4%). miss_cand=12472 from the same gap mechanism plus Compustat permnos absent from the monthlyCRSP-derived grid columns.",
+      "proposed_fix": "Fix the op: primary = DIV0(a - avg_a, avg_a) - DIV0(b - avg_b, avg_b) and fallback = DIV0(a - LAG(a,12), LAG(a,12)) - DIV0(b - LAG(b,12), LAG(b,12)), where DIV0 returns NaN when the denominator is exactly 0 (equivalently: replace inf/-inf with NaN in primary before primary.where(primary.notna(), fallback)). The residual positional-vs-calendar lag divergence (~0.4% of cells) is irreducible under calendar LAG; either accept it as documented tolerance or demote to script.",
+      "confidence": "certain"
+    },
+    {
+      "factor": "GrSaleToGrOverhead",
+      "discrepancy_type": [
+        "formula_error",
+        "timing_lag_shift",
+        "universe_coverage"
+      ],
+      "evidence": "Same shared op _op_growth_difference_fallback (p1_factor_engine.py L945-950) with xsga instead of invt; script GrSaleToGrOverhead.py L61-119 identical structure to GrSaleToGrInv. Counted 6,472 inf cells in engine vs 0 in oracle (unguarded division; explains max_abs=Infinity). Same positional-lag proof cell: permno 18331 at 1954-06: oracle=0.046610355 = row-lag primary using l24 xsga=6.46/sale=290.4 from >24 calendar months back; engine=0.10981816 = 12m fallback (calendar l24 missing). 10,888 both-valued cells beyond tol; miss_cand=12350 from Compustat coverage gaps and grid-column universe.",
+      "proposed_fix": "Same op fix as GrSaleToGrInv: guard both primary and fallback divisions with 0-denominator->NaN (or inf->NaN before the fallback coalesce). Accept or demote the small positional-lag residual.",
+      "confidence": "certain"
+    },
+    {
+      "factor": "Herf",
+      "discrepancy_type": [
+        "universe_coverage",
+        "fill_domain"
+      ],
+      "evidence": "(1) Industry sums over the wrong universe: engine computes sums over all monthlyCRSP permnos with sale (op _op_rolling_industry_herfindahl + _rolling_industry_herf_one_month, p1_factor_engine.py L1066-1104); script (Herf.py L36-56) right-merges onto SignalMasterTable so sums run over SMT only. Sampled IBM sic4=3573 at 1990-01: engine universe 73 firms (70 with sale), indsale=105593.165, month-herf=0.348451; script universe 68 SMT firms (67 with sale), indsale=105510.425, month-herf=0.348997. After the 36m rolling mean: engine 0.350500 vs oracle 0.350781 \u2014 the pattern behind 1,582,835 small-magnitude diffs. (2) Assignment domain: engine assigns the month-herf only where the firm's own sale is notna (L1067: valid = values.notna() & groups.notna()); script's transform('sum') assigns tempHerf to EVERY SMT row in the industry-month including NaN-sale firms. Sampled 1990-01: 384 of 400 checked SMT no-sale firms have oracle values but engine NaN (e.g. permno 10002: ora=0.039368, eng=NaN) \u2014 this is the bulk of miss_cand=608040. Also script yields tempHerf=0.0 (not NaN) for all-NaN-sale industry-months (transform sum of empty = 0.0) while engine replaces 0 group_sums with NaN \u2014 minor. The Herf.py L86 leading-space typo (' 4813') is empirically moot: zero SIC-4813 rows exist pre-1983 in monthlyCRSP.",
+      "proposed_fix": "Two changes to the op: (a) restrict both the industry sums and the output support to the SMT universe (needs an SMT-presence mask panel as an extra arg / masking input); (b) assign the industry-month herf to every universe firm with a valid SIC \u2014 compute shares from sale.notna() firms but map the group sum back to all group members (drop the values.notna() condition from the assignment, keep it in the numerator), and emit 0.0 for industry-months where all sale are NaN. If SMT presence cannot be expressed, demote to script.",
+      "confidence": "certain"
+    },
+    {
+      "factor": "HerfAsset",
+      "discrepancy_type": [
+        "universe_coverage"
+      ],
+      "evidence": "Same op _op_rolling_industry_herfindahl over 'at'; script (HerfAsset.py L36) inner-merges m_aCompustat with SignalMasterTable, so industry asset sums run over the Compustat-AND-SMT intersection; engine sums over all monthlyCRSP permnos with at. Sampled IBM sic4=3573 at 1990-01: engine 73 firms (70 with at), indasset=115361.006, month-herf=0.422873; script 67 firms (all with at), indasset=115290.406, month-herf=0.423391. After 36m rolling: engine 0.399438 vs oracle 0.399672 \u2014 1,310,154 cells >1e-4 of this small-shift kind (max_abs 0.978 in small industries). miss_cand is only 1335 because the engine's at.notna() assignment requirement almost coincides with the script's inner-merge universe (unlike Herf's right merge). extra=22807 = non-SMT monthlyCRSP permno-months with Compustat at.",
+      "proposed_fix": "Restrict the industry sums and output support of rolling_industry_herfindahl to the SMT universe (SMT-presence mask arg), i.e. mask the metric panel to SMT rows before the per-month herf computation. Assignment domain can stay metric.notna() for HerfAsset (matches inner merge to within a handful of NaN-at Compustat rows). If no SMT mask is expressible, demote to script.",
+      "confidence": "certain"
+    },
+    {
+      "factor": "HerfBE",
+      "discrepancy_type": [
+        "universe_coverage"
+      ],
+      "evidence": "Script L51 inner-joins m_aCompustat to SignalMasterTable BEFORE the industry sums (L78 indequity=groupby(sic3D,month) sum of tempBE; L84 tempHerf=sum of squared shares); engine _op_rolling_industry_herfindahl (p1_factor_engine.py L1079-1104) sums BE over ALL monthlyCRSP x m_aCompustat cells. Exact reproduction at IBM (12490, sic4=3573, 1990-06): script-universe 36m rolling mean = 0.4824451171 == oracle 0.48244512; engine-universe = 0.4821909296 == native 0.48219094. At 1990-06 the engine's sic-3573 industry has 62 firms vs script's 59; the 3 extras include shrcd=71 and firms absent from SMT that month, shifting the one-month Herfindahl from 0.4853426 (script) to 0.4852018 (engine). BE formula, 36m/min12 rolling, shrcd<=11 and regulated-industry masks all match (shift-corr flat ~0.766 at shifts -2..+2, no timing shift). max_abs 1553 arises where near-zero/negative industry BE sums make squared shares explode, amplifying the universe difference.",
+      "proposed_fix": "Keep the tree; change op semantics: mask the BE metric and sic panels to the SignalMasterTable universe (shrcd 10/11/12, exchcd 1/2/3 row-presence mask) BEFORE the per-month group sums, i.e. rolling_industry_herfindahl(MASK_UNIVERSE(BE), MASK_UNIVERSE(sicCRSP), shrcd) with the output also masked to universe rows. No formula or lag change needed.",
+      "confidence": "certain"
+    },
+    {
+      "factor": "IndMom",
+      "discrepancy_type": [
+        "universe_coverage",
+        "fill_domain"
+      ],
+      "evidence": "Script IndMom.py L37 zero-fills ret only on observed SMT rows and L43-52 builds l1..l5 by calendar self-merge, so Mom6m (L55-61) is NaN unless the permno has SMT rows at ALL of t-1..t-5; engine tree wraps ret in fillna(value=0) over the whole grid and _op_industry_weighted_momentum (engine L974-989) compounds lags 1-5 with zero-filled pre-listing months, then weights by unfiltered monthlyCRSP mve_c. Exact reproduction at IBM (12490, sic2=35, 1990-06): script weighted mean over 391 valid firms = 0.2455895737 == oracle 0.24558957; engine mean over 410 firms = 0.2452448138 == native 0.24524482. The 19 extra engine members: 7 non-SMT securities (shrcd 30/31/71) [universe_coverage] and 12 SMT firms newly listed in 1990-01..1990-03 (e.g. permno 76076 has SMT rows only from 1990-02) whose Mom6m the engine fabricates as compound-of-zeros [fill_domain]. extra=973,936 cells = engine emits values for every monthlyCRSP permno with valid mve_c and sic. Timing is clean: shift-corr peaks at 0 (0.9997).",
+      "proposed_fix": "Change op semantics: (1) compute Mom6m as COMPOUND(ret, lags 1-5) with zero-fill applied only where a universe (SMT) row exists, and require row presence at all 5 lag months (NaN otherwise) instead of whole-grid fillna(ret,0); (2) restrict weights/group membership and the merged-back output to the SignalMasterTable universe mask.",
+      "confidence": "certain"
+    },
+    {
+      "factor": "IndRetBig",
+      "discrepancy_type": [
+        "universe_coverage",
+        "formula_error"
+      ],
+      "evidence": "Script IndRetBig.py: relrank of mve_c over ALL SMT rows of the FF48-month group (L51, ranks defined even when ret is NaN), big set = rk>0.7 (L59), industry mean skips NaN ret (L63-64), value merged back to ALL rows (L74) and only NaN'ed where rk>=0.7 (L78, NaN rank retains value). Engine _op_industry_big_return (engine L2501-2522) instead requires ret.notna() & mve_c.notna() for BOTH rank inclusion and output, over unfiltered monthlyCRSP. Exact reproduction at 1990-06, FF48=16: script big-mean over 13 firms = -0.019170538 == oracle -0.019171 for permnos 68647/48637/49584/19802/11177/27909; engine big set has 14 firms \u2014 the extra is permno 75594, shrcd=31 ADR not in SMT \u2014 giving mean 0.003362786 == native 0.003363. Rank values also shift (e.g. permno 68647 rk 0.3902 script vs 0.3864 engine) because ret-NaN rows are excluded from engine ranks. Of 59 oracle-valued/native-missing cells at t, 43 have CRSP ret NaN (engine's valid mask drops them; script assigns them the industry value) \u2014 explains miss_cand=62,676; extra=687,616 comes from the unfiltered CRSP output universe.",
+      "proposed_fix": "Change op semantics: (1) restrict to SignalMasterTable universe; (2) rank on mve_c across all universe rows with FF48 (do not require ret notna for ranking); (3) big-firm mean = skipna mean of ret over rk>0.7; (4) assign the industry value to all universe rows (including own-ret-NaN and rank-NaN rows), then NaN only where rk>=0.7.",
+      "confidence": "certain"
+    },
+    {
+      "factor": "IntanBM",
+      "discrepancy_type": [
+        "fill_domain",
+        "universe_coverage"
+      ],
+      "evidence": "Engine tree fillna(ret,0) + _op_intangible_residual (engine L1538-1545) builds cumret over the ENTIRE grid, so ret60 is defined (and =0) for unlisted permno-months; _trim_global's 1/99% pool = 43,668,412 grid cells of which 37,054,320 (84.9%) are structural zeros, giving trim bounds [-0.8916, +2.6282] vs the script's pooled bounds [-0.9651, +10.2000] over 1,922,943 real observations (ZZ1 script L96 winsor2 trim on merged rows only; L75-91 cumret/lag60 exist only where the SMT-inner-join panel has rows at t and t-60). Reproduction at 1990-06: engine-semantics regression (N=2607) residual for IBM = -0.0962662212 == native -0.09626622; script-semantics regression (N=2783) = -0.0833567165 == oracle -0.08335672. 98 engine-sample permnos are not in SMT (shrcd 14/15/18/21/30/31/41/48/70/71). IBM's own inputs match both sides (ret60=0.1377363 in both) \u2014 the divergence is entirely the cross-sectional regression sample and trim bounds, so ~100% of both-valued cells differ. Shift-corr peaks at 0: no timing lag. log(ceq/mve) formula itself matches (NaN for ratio<=0 both sides).",
+      "proposed_fix": "Change op semantics of intangible_residual: (1) compute cumret/ret60 only on universe rows with an exact t-60 universe row (calendar-lag presence requirement) instead of whole-grid zero-fill; (2) compute the 1/99% trim quantiles over that masked real-observation pool; (3) mask the account measure, lag60, and regression cross-section (and output) to the SignalMasterTable-inner-join-m_aCompustat universe. Tree structure (log(div(ceq, mve_permco)), ret) is otherwise correct.",
+      "confidence": "certain"
+    },
+    {
+      "factor": "IntanCFP",
+      "discrepancy_type": [
+        "fill_domain",
+        "universe_coverage"
+      ],
+      "evidence": "Same mechanism as IntanBM (shared op _op_intangible_residual, engine L1538-1545; shared script ZZ1 L96/L119/L128-152). Proof at 1990-06: engine-semantics regression (N=2699) residual for IBM = -0.1841078544 == native -0.18410785; script-semantics regression (N=2893) = -0.2741535208 == oracle -0.27415353. Engine trim bounds [-0.8916, +2.6282] from a pool that is 84.9% structural zeros vs script [-0.9651, +10.2000]; 98 non-SMT securities in the engine cross-section. Measure formula (ib+dp)/mve_permco matches on both sides (IBM inputs identical).",
+      "proposed_fix": "Same op-semantics fix as IntanBM: universe-masked ret60 with t-60 row-presence requirement, trim quantiles over real observations only, regression cross-section and output masked to the SMT-x-m_aCompustat universe.",
+      "confidence": "certain"
+    },
+    {
+      "factor": "IntanEP",
+      "discrepancy_type": [
+        "fill_domain",
+        "universe_coverage"
+      ],
+      "evidence": "Same shared op/script as IntanBM/CFP. Proof at 1990-06: engine-semantics regression (N=2699) residual for IBM = -0.1834112535 == native -0.18341126; script-semantics regression (N=2893) = -0.2985144366 == oracle -0.29851443. Divergence driven by trim pool poisoned with 37.05M structural zeros (bounds +2.63 vs +10.20 upper) and 98 non-SMT securities per month in the cross-section; ni/mve_permco measure itself matches.",
+      "proposed_fix": "Same op-semantics fix as IntanBM.",
+      "confidence": "certain"
+    },
+    {
+      "factor": "IntanSP",
+      "discrepancy_type": [
+        "fill_domain",
+        "universe_coverage"
+      ],
+      "evidence": "Same shared op/script. Proof at 1990-06: engine-semantics regression (N=2693) residual for IBM = -0.1806070631 == native -0.18060707; script-semantics regression (N=2886) = -0.3962575420 == oracle -0.39625755. IBM's own inputs identical both sides (ret60=0.1377363, SP=0.928662, SP_l60=0.605870) proving the divergence is purely the cross-sectional sample: engine trim bounds [-0.8916,+2.6282] (pool 84.9% structural zeros from whole-grid fillna(ret,0)) vs script [-0.9651,+10.2000] (1.92M real obs), plus 98 non-SMT securities (shrcd 14/18/30/31/48/71 etc.) in the engine's monthly regression.",
+      "proposed_fix": "Same op-semantics fix as IntanBM: universe-masked ret60 with exact t-60 presence, real-observation trim pool, and universe-masked regression sample/output.",
+      "confidence": "certain"
+    },
+    {
+      "factor": "Investment",
+      "discrepancy_type": [
+        "formula_error",
+        "oracle_artifact"
+      ],
+      "evidence": "Engine op _op_investment_to_sales_scaled (p1_factor_engine.py:850-854) uses pandas ratio.rolling(36, min_periods=24).mean(); script Investment.py:44-54 uses polars asrol rolling_mean(window_size=36, min_samples=24). Proven divergence: pandas rolling strips +/-inf (pd.Series([inf,inf,inf,1,2,3]).rolling(3,min_periods=1).mean() -> [nan,nan,nan,1.0,1.5,2.0]) while polars propagates it (pl rolling_mean -> [inf,inf,inf,inf,inf,2.0]). Permno 92089 has revt=0.000, capx=188.531 for 2008-06..2009-05 -> ratio=inf; oracle=0.000000 for 2010-05..2012-04 (tempMean=inf; rerunning the script reproduces tempMean=inf, InvFinal=0.0 exactly) while native is NaN until 2011-05 then 0.264335 = 0.226134/0.130287 (mean of the 24 finite ratios only); both agree from 2012-05 (first inf-free window). This is the bulk of the 2894 beyond-tol cells (246 permnos). The 3467 missing-in-engine cells: permno 12072 has capx=0 always -> ratio=0; polars all-zero rolling mean returns -1.233581e-17 (float noise), so oracle emits -0.0 for 193 months (2001-05..2017-05, verified in pyData/Predictors/Investment.csv), while engine's exact 0.0/0.0 -> NaN -> dropped.",
+      "proposed_fix": "Two changes to the op (or demote to script). (1) inf propagation: compute the rolling mean without pandas' silent inf->NaN conversion - e.g. detect windows containing inf via ratio.abs().eq(np.inf) 36-month rolling max, count window obs via ratio.notna() rolling sum (inf counts as an observation, so min_obs=24 is met at 24 rows not 24 finite values), and set hist_mean=inf on poisoned windows so value=ratio/inf=0 for finite ratio. (2) all-zero windows: oracle emits +/-0.0 where the true math is 0/0 because of polars ~1e-17 rolling noise - either emit 0 where (ratio==0 & window all zeros & count>=24) to match, or document as oracle_artifact and exclude from tolerance. Given both behaviors are polars-rolling-numerics-shaped, demote-to-script is the safest exact fix; the masking fix above covers >95% of cells.",
+      "confidence": "certain"
+    },
+    {
+      "factor": "LRreversal",
+      "discrepancy_type": [
+        "formula_error",
+        "fill_domain",
+        "universe_coverage"
+      ],
+      "evidence": "Tree params lags=[13..60] (48 lags) with fill_missing=0; script LRreversal.py:34-45 compounds lags 13..36 only (24 lags, range(13,37)). Sampled IBM (12490): 1990-06 native=-0.022914 = manual compound of lags 13-60 to 6 decimals; oracle=-0.261857 = manual compound of lags 13-36 exactly (also 1990-03: native 0.036933=comp(13..60), oracle -0.065540=comp(13..36); 1990-09, 1991-01 likewise). Explains 3.03M of 3.10M both-valued cells beyond tol, max_abs 563. fill_missing=0 additionally zero-fills the whole month x permno grid, manufacturing 43.09M extra cells (script keeps NaN when any of the 24 lags predates the permno's history: LRreversal.py:36-38 shift produces NaN, product propagates, dropna line 49). Universe: script reads SignalMasterTable; engine reads unfiltered monthlyCRSP (e.g. AAPL SMT span starts 1980-12 vs CRSP 1980-11).",
+      "proposed_fix": "COMPOUND(ret, lags=[13..36]) - drop lags 37-60. Replace fill_missing=0 with span-limited zero-fill: fill ret=0 only between each permno's first and last SignalMasterTable month, leave NaN outside so the product propagates NaN when any lag falls before span start (replicates the >=36-months-history gate). Mask output to the SignalMasterTable universe.",
+      "confidence": "certain"
+    },
+    {
+      "factor": "MRreversal",
+      "discrepancy_type": [
+        "formula_error",
+        "fill_domain",
+        "universe_coverage"
+      ],
+      "evidence": "Tree params lags=[1..24] with fill_missing=0; script MRreversal.py:38-72 compounds calendar lags 13-18 only. Sampled IBM: 1990-06 native=0.159276 = manual compound of lags 1-24 exactly; oracle=-0.056215 = manual compound of lags 13-18 exactly (same exact matches at 1990-03/-0.039495 vs 0.109759, 1990-09, 1991-01). Explains 3.62M of 3.62M both-valued cells beyond tol, max_abs 544. Script fills missing lags with 0 (so partial availability is fine) but sets NaN iff ALL six lags were originally missing (MRreversal.py:76-86); engine's grid-wide zero-fill emits 0 everywhere instead -> 42.56M extra cells. Universe: SignalMasterTable vs unfiltered monthlyCRSP.",
+      "proposed_fix": "COMPOUND(ret_fill0, lags=[13,14,15,16,17,18]) with fill_missing=0 retained, plus a mask: output NaN where all six raw (unfilled) ret lags are NaN on the SMT-universe panel (i.e. NOT_ALL_NAN(LAG(ret,13..18)) gate). Restrict to SignalMasterTable universe.",
+      "confidence": "certain"
+    },
+    {
+      "factor": "Mom12mOffSeason",
+      "discrepancy_type": [
+        "mean_denominator",
+        "fill_domain",
+        "universe_coverage"
+      ],
+      "evidence": "Lag list [1..10] is correct (IBM 1990-03..1991-01: native==oracle==manual skipna mean of lags 1-10 to 6 decimals; no 1-month shift). Divergence is the denominator: engine mean_of_lags (p1_factor_engine.py:717-722) fills NaN lags with 0 then means over all 10; script Mom12mOffSeason.py:37-38,51 zero-fills ret only inside the SMT span (fill_date_gaps then fillna(0)) and uses pandas skipna mean (denominator = lags inside span). Sampled AAPL (14593, SMT span starts 1980-12): 1981-02 lag-sum=-0.170018, oracle=-0.085009 = sum/2 (lags to 1981-01 and 1980-12; lag3 to 1980-11 is outside SMT span), native=-0.017002 = sum/10. Same pattern 1981-04 (oracle sum/4-equivalent -0.076702 vs native -0.030681), 1981-07; identical at 1981-10 when all 10 lags in-span. 228,163 of 229,765 beyond-tol cells (99.3%) lie within the first 10 months of each permno's oracle span. Grid-wide zero-fill also emits 0.0 pre-listing (native 1975-06 for AAPL = 0.0, oracle NaN) -> 42.10M extra cells.",
+      "proposed_fix": "MEAN_OF_LAGS(ret_span0, lags=[1..10], skipna=True): zero-fill ret only within each permno's [first,last] SignalMasterTable month, drop fill_missing=0, and let the mean skip NaN lags (denominator = count of in-span lags); NaN when all 10 lags out-of-span. Mask to SignalMasterTable universe.",
+      "confidence": "certain"
+    },
+    {
+      "factor": "MomOffSeason",
+      "discrepancy_type": [
+        "mean_denominator",
+        "fill_domain",
+        "universe_coverage"
+      ],
+      "evidence": "Lag list matches script exactly (44 lags: 12-58 excluding 23,35,47; script MomOffSeason.py:41-47 computes the same set; IBM 1990-03..1991-01 native==oracle==manual to 6 decimals, no shift). Denominator divergence proven on AAPL: 1983-06 (19 of 44 lags in SMT span) oracle=-0.040535 = skipna mean over in-span lags, native=-0.016582 = same sum/44; 1982-06 oracle -0.028523 vs native -0.004538; 1984-06 oracle 0.027265 vs native 0.017970; exact agreement at 1986-01 when all 44 lags available. 1,017,595 of 1,020,377 beyond-tol cells (99.7%) fall within the first 59 months of the permno's oracle span. Grid zero-fill emits 0.0 pre-listing (AAPL 1975-06 native=0.0, oracle NaN) -> 42.42M extra cells. Universe: SignalMasterTable vs unfiltered monthlyCRSP (AAPL span offset 1980-12 vs 1980-11 shifts which lags count).",
+      "proposed_fix": "MEAN_OF_LAGS(ret_span0, lags=offseason(12,60), skipna=True): span-limited zero-fill of ret inside each permno's SMT span, remove fill_missing=0, skipna mean so denominator = number of in-span lags; NaN when zero lags in-span. Mask to SignalMasterTable universe.",
+      "confidence": "certain"
+    },
+    {
+      "factor": "MomOffSeason06YrPlus",
+      "discrepancy_type": [
+        "mean_denominator",
+        "fill_domain",
+        "universe_coverage"
+      ],
+      "evidence": "Lag list matches script (55 lags: 60-118 excluding 71,83,95,107; MomOffSeason06YrPlus.py:41-47; IBM 1990 samples native==oracle==manual exactly). AAPL: 1987-06 (19 in-span lags) oracle=-0.040535 = skipna mean, native=-0.013266 = same sum/55; 1986-06 oracle -0.028523 vs native -0.003630; 1989-01 oracle 0.010097 vs native 0.006425; exact match at 1990-12 with all 55 lags available. 798,396 of 799,651 beyond-tol cells (99.8%) within first 119 months of oracle span. Pre-listing native=0.0 vs oracle NaN -> 43.50M extra cells.",
+      "proposed_fix": "Same as MomOffSeason: MEAN_OF_LAGS(ret_span0, lags=offseason(60,120), skipna=True) with span-limited zero-fill, no fill_missing=0, skipna denominator, SMT-universe mask.",
+      "confidence": "certain"
+    },
+    {
+      "factor": "MomOffSeason11YrPlus",
+      "discrepancy_type": [
+        "mean_denominator",
+        "fill_domain",
+        "universe_coverage"
+      ],
+      "evidence": "Lag list matches script (55 lags: 120-178 excluding 131,143,155,167; MomOffSeason11YrPlus.py:41-47; IBM 1990 samples native==oracle==manual exactly). AAPL: 1992-06 (19 in-span lags) oracle=-0.040535 vs native=-0.013266 (= same sum/55); 1991-06 oracle -0.028523 vs native -0.003630; 1994-01 oracle 0.010097 vs native 0.006425; exact match 1995-12 with all 55 lags. 514,445 of 514,840 beyond-tol cells (99.9%) within first 179 months of oracle span. Pre-listing native=0.0 vs oracle NaN -> 44.34M extra cells.",
+      "proposed_fix": "Same as MomOffSeason: MEAN_OF_LAGS(ret_span0, lags=offseason(120,180), skipna=True) with span-limited zero-fill, no fill_missing=0, skipna denominator, SMT-universe mask.",
+      "confidence": "certain"
+    },
+    {
+      "factor": "MomSeason",
+      "discrepancy_type": [
+        "mean_denominator",
+        "fill_domain",
+        "universe_coverage"
+      ],
+      "evidence": "Script MomSeason.py L38 fills ret=0 only on SignalMasterTable rows, then L44 stata_multi_lag(lags 23,35,47,59), L49-58 computes rowtotal/rownonmiss => sum/N_valid. Engine tree mean_of_lags(lags=[23,35,47,59], fill_missing=0); p1_factor_engine.py L717-722 fillna(0) AFTER shifting on the whole grid => sum/4 always and a value on every grid cell. Sampled divergent cells: permno 19011 @2022-05 (listed 2019-09): eng=0.022287=sum/4, ora=0.089147=sum/1 (nvalid=1); permno 85710 @2000-12: eng=0.149036=sum/4, ora=0.298072=sum/2; permno 85426 @2001-10: eng=0.022909=sum/4, ora=0.030546=sum/3. Full-history IBM 12490 matches exactly at 8 dates (no timing shift). Extra=42,746,967 cells: engine has 40,490,422 exact-zero cells (e.g. eng=0.0 at 2000-01 for permno 19011 which lists 2019-09; oracle NaN). One sample (15531 @2019-06, ora=sum/3 not sum/2) shows oracle counts an in-span month with NaN CRSP ret as a valid 0 (fillna-before-lag over SMT span).",
+      "proposed_fix": "Change mean_of_lags semantics for fill_missing: zero-fill the INPUT only within each permno's universe span (SignalMasterTable presence) BEFORE lagging, leave out-of-span lags NaN, and take a NaN-skipping mean (sum/valid-count, NaN if all lags missing). DSL: MEAN_OF_LAGS(FILL_IN_SPAN(ret, 0, universe=SignalMasterTable), lags=[23,35,47,59], skipna=true), then MASK to SignalMasterTable universe to kill the 42M extra cells.",
+      "confidence": "certain"
+    },
+    {
+      "factor": "MomSeason06YrPlus",
+      "discrepancy_type": [
+        "mean_denominator",
+        "fill_domain",
+        "universe_coverage"
+      ],
+      "evidence": "Identical structure to MomSeason: script L40-54 lags [71,83,95,107,119], rowtotal/rownonmiss; engine mean_of_lags fill_missing=0 => sum/5. Sampled: permno 84005 @2004-02 eng=-0.101293=sum/5 vs ora=-0.168822=sum/3 (nvalid=3/5); 77281 @1999-08 eng=-0.051989=sum/5 vs ora=-0.129974=sum/2; 85789 @1994-06 eng=0.008833=sum/5 vs ora=0.014721=sum/3. IBM 12490 @1995-06 (all 5 lags valid) matches exactly => lags themselves correct, no shift. Extra=43.7M grid-wide zero cells from post-shift fillna(0).",
+      "proposed_fix": "Same fix as MomSeason: MEAN_OF_LAGS(FILL_IN_SPAN(ret,0,universe), lags=[71,83,95,107,119], skipna=true) + SignalMasterTable universe mask.",
+      "confidence": "certain"
+    },
+    {
+      "factor": "MomSeason11YrPlus",
+      "discrepancy_type": [
+        "mean_denominator",
+        "fill_domain",
+        "universe_coverage"
+      ],
+      "evidence": "Script lags [131,143,155,167,179] (L40), rowtotal/rownonmiss. Sampled: permno 49541 @1981-02 eng=0.011594=sum/5 vs ora=0.057971=sum/1 (nvalid=1/5, factor of 5); 54463 @1985-06 eng=-0.040278=sum/5 vs ora=-0.067130=sum/3; 11607 @1939-10 eng=0.042181=sum/5 vs ora=0.070301=sum/3. IBM full-history cell matches exactly. Extra=44.5M zero-filled grid cells.",
+      "proposed_fix": "Same fix: MEAN_OF_LAGS(FILL_IN_SPAN(ret,0,universe), lags=[131,143,155,167,179], skipna=true) + universe mask.",
+      "confidence": "certain"
+    },
+    {
+      "factor": "MomSeason16YrPlus",
+      "discrepancy_type": [
+        "mean_denominator",
+        "fill_domain",
+        "universe_coverage"
+      ],
+      "evidence": "Script lags [191,203,215,227,239] (L40), rowtotal/rownonmiss. Sampled: permno 23595 @1964-06 eng=-0.005714=sum/5 vs ora=-0.028571=sum/1; 17232 @1948-03 eng=-0.064470=sum/5 vs ora=-0.080587=sum/4; 15712 @1943-12 eng=0.001071=sum/5 vs ora=0.002679=sum/2. IBM cell with 5/5 valid lags matches exactly. Extra=44.97M zero cells.",
+      "proposed_fix": "Same fix: MEAN_OF_LAGS(FILL_IN_SPAN(ret,0,universe), lags=[191,203,215,227,239], skipna=true) + universe mask.",
+      "confidence": "certain"
+    },
+    {
+      "factor": "MomOffSeason16YrPlus",
+      "discrepancy_type": [
+        "mean_denominator",
+        "fill_domain",
+        "universe_coverage"
+      ],
+      "evidence": "Script MomOffSeason16YrPlus.py L37-38 fill_date_gaps + fillna(0) on SMT span, L47 off-season lags 180-238 excluding (lag+1)%12==0 (55 lags, identical to engine tree), L54 NaN-skipping .mean(axis=1). Sampled: permno 65429 @1999-06 eng=-0.003299=sum/55 vs ora=-0.018147=sum/10 (raw monthlyCRSP shows 9 valued lags; the 10th is an in-span gap-filled/NaN-ret month counted as 0 \u2014 matches sum/nvalid over gap-filled SMT span, -0.181467/10); 47706 @1984-06 eng=-0.000173=sum/55 vs ora=-0.001902 (denominator ~5 in-span lags); 60038 @1989-07 eng=-0.008706=sum/55 vs ora=-0.025202. IBM 55/55-valid cell matches exactly. Extra=44.9M grid-wide values from post-shift fillna(0).",
+      "proposed_fix": "MEAN_OF_LAGS(FILL_IN_SPAN(ret,0,universe=gap-filled SMT span), lags=<same 55 off-season lags>, skipna=true): zero-fill input within the permno's first-to-last SMT month (contiguous, matching fill_date_gaps), NaN outside span, denominator = count of lags landing in span; mask output to SignalMasterTable universe.",
+      "confidence": "certain"
+    },
+    {
+      "factor": "MomSeasonShort",
+      "discrepancy_type": [
+        "formula_error",
+        "fill_domain",
+        "universe_coverage"
+      ],
+      "evidence": "Script MomSeasonShort.py L42-43: MomSeasonShort = ret_lag11 ONLY (single 11-month lag of zero-filled ret). Engine tree: mean_of_lags(lags=[11,23], fill_missing=0) \u2014 averages an extra lag-23 term. Sampled IBM 12490: @2000-06 ora=-0.027563 == l11.ret exactly, eng=0.063247 == mean(l11=-0.027563, l23=0.154056); @2010-09 ora=0.008361==l11, eng=-0.098376==mean(0.008361,-0.205113); 6 more dates all identical pattern. Explains 3,649,231/3,730,640 cells beyond tol (wrong wherever l23 != l11). Plus same grid-wide fillna extras (42.4M).",
+      "proposed_fix": "Corrected tree: LAG(FILL_IN_SPAN(ret,0,universe), 11) \u2014 drop lag 23 entirely (it is not a mean at all), keep NaN outside the permno's SMT span, mask to SignalMasterTable universe.",
+      "confidence": "certain"
+    },
+    {
+      "factor": "MomVol",
+      "discrepancy_type": [
+        "universe_coverage",
+        "fill_domain",
+        "formula_error"
+      ],
+      "evidence": "Recomputation reproduces both golden values exactly for IBM 12490 @1990-01: Mom6m=-0.16282 both ways, but ENGINE decile=1 (golden native=1.0) because _op_momentum_volume_signal (p1_factor_engine.py L1034-1042) receives ret pre-filled with 0 over the WHOLE grid (tree wraps fillna(0) around ret), so mom6 is defined for all 38,843 columns of which 31,868 are exact-zero dead/unlisted stocks and _row_bucket (L938-942, pct-rank+ceil) ranks IBM at pct=0.0563; ORACLE decile=4 (golden oracle=4.0) from pd.qcut over the actual SMT-inner-join universe of 5,957 stocks (MomVol.py L36-40, L87-89). Rank corr only 0.75, 872,393/1,096,542 cells differ, max_abs=9. Additional broken pieces: (a) obs_num gate \u2014 _per_permno_obs_num(ret,vol) uses ret.notna() but ret is already zero-filled => alive everywhere => obs_num = grid row index, so the script's per-permno _n<24 mask (MomVol.py L110-121) is not applied: 678/2000 sampled extra cells fall within a stock's first 23 months; remaining extras are non-SMT stocks (monthlyCRSP-only) entering the tercile-3 pool. (b) 268 miss_cand (all early 1930s, e.g. 11949 @1930-12 ora=8 with full 6-month vol window) are stocks that are volume-tercile 3 in the oracle's qcut/SMT pool but tercile<=2 in the engine's grid-wide rank pool, so engine's where(cat_vol==3) drops them. (c) Script also nulls vol<0 (L46); engine does not. (d) _row_bucket vs pd.qcut(duplicates='drop') binning is not equivalent even on identical pools.",
+      "proposed_fix": "Demote to script (recommended): the signal is cross-sectional double-bucketing (fastxtile deciles x terciles) over an inner-join SMT-and-monthlyCRSP universe with a per-permno _n>=24 gate \u2014 irreducibly script-shaped given qcut duplicate-drop semantics. If kept as an op instead: pass UNFILLED ret plus a SignalMasterTable universe mask; inside the op fill ret=0 only in-span, compute mom6, restrict both bucket pools to the universe, replace _row_bucket with a qcut-equivalent (value-quantile breakpoints, duplicates dropped), null vol<0 before the rolling mean, and derive obs_num from universe presence rather than notna of a pre-filled panel.",
+      "confidence": "certain"
+    },
+    {
+      "factor": "NetDebtFinance",
+      "discrepancy_type": [
+        "formula_error"
+      ],
+      "evidence": "Tree: sub(sub(dltis,dltr), fillna(dlcch,0)) = dltis-dltr-MINUS-dlcch; script NetDebtFinance.py line 48: (dltis - dltr + dlcch)/(0.5*(at+l12_at)), and line 53 sets NaN where |x|>1. Sampled IBM (permno 12490) 1985-06: dltis=1363, dltr=768, dlcch=302, engine=0.00732 which equals (1363-768-302)/avg_at exactly; oracle=0.022411 which equals (1363-768+302)/avg_at exactly. Missing |x|>1 filter proven: engine has 4,796 cells with |value|>1, oracle has 0; 3,921 of the 4,885 extra-in-engine cells have |engine|>1. Residual miss_cand=13,727 comes from script's positional groupby.shift(12) for l12_at vs engine calendar lag (same mechanism proven for OrderBacklogChg).",
+      "proposed_fix": "Flip the dlcch sign: DIV( ADD( SUB(dltis,dltr), FILLNA(dlcch,0) ), DIV(ADD(at,LAG(at,12)),2) ), then apply the trim mask: result.where(abs(result)<=1) (add a where_abs_le op or wrap with an existing cap/mask op).",
+      "confidence": "certain"
+    },
+    {
+      "factor": "NetDebtPrice",
+      "discrepancy_type": [
+        "formula_error",
+        "universe_coverage"
+      ],
+      "evidence": "Tree computes a 12-month CHANGE: ((dltt+dlc-che) - LAG12(dltt+dlc-che)) / LAG6(monthlyCRSP.mve_permco). Script NetDebtPrice.py lines 68-70 computes a LEVEL: ((dltt+dlc+pstk+dvpa-tstkp)-che)/mve_permco (contemporaneous, from SignalMasterTable), lines 76-83 set NaN if at/ib/csho/ceq/prcc_f missing, lines 86-93 drop bottom-2 BM quintiles (fastxtile on log(ceq/mve) per month). Sampled IBM 1988-07: engine=0.002915 = delta-netdebt/lag6-mve exactly; oracle=-0.019712 = (3858+1629+0+0-0-6967)/75079.289 exactly. Universe/mask gap: IBM has only 73 oracle-valued months vs 871 engine-valued (BM-quintile + missing-var masks absent in engine) -> extra=1,212,432.",
+      "proposed_fix": "Rewrite tree as LEVEL formula: nonfinancial_only( DIV( SUB(ADD(ADD(ADD(dltt,dlc),pstk),SUB(dvpa,tstkp)... i.e. dltt+dlc+pstk+dvpa-tstkp-che, mve_permco_from_SMT ), sic ), plus a require-nonmissing mask on {at, ib, csho, ceq, prcc_f}, plus a cross-sectional monthly quintile filter on log(ceq/mve) keeping quintiles 3-5 with Stata fastxtile semantics, computed on the SignalMasterTable universe. If the DSL has no Stata-equivalent cross-sectional xtile op computed on the filtered universe, demote to script.",
+      "confidence": "certain"
+    },
+    {
+      "factor": "NetEquityFinance",
+      "discrepancy_type": [
+        "formula_error"
+      ],
+      "evidence": "Tree numerator: SUB(sstk, prstkc) \u2014 omits dividends. Script NetEquityFinance.py line 44: (sstk - prstkc - dv)/(0.5*(at+l12_at)), line 49 NaN if |x|>1. Sampled IBM 1992-06: sstk=67, prstkc=196, dv=2771; engine=-0.001433 = (67-196)/avg_at exactly; oracle=-0.032215 = (67-196-2771)/avg_at exactly. Extra=417,276 explained: engine formula doesn't need dv so it emits values on the 443,918 m_aCompustat rows where dv is NaN but sstk/prstkc are present (oracle NaN there); plus engine has 30,726 cells with |value|>1 vs oracle 0 (missing trim).",
+      "proposed_fix": "DIV( SUB(SUB(sstk,prstkc),dv), DIV(ADD(at,LAG(at,12)),2) ) then mask |x|>1 -> NaN. The dv term automatically fixes most extra cells.",
+      "confidence": "certain"
+    },
+    {
+      "factor": "NumEarnIncrease",
+      "discrepancy_type": [
+        "fill_domain",
+        "universe_coverage",
+        "oracle_artifact"
+      ],
+      "evidence": "Dominant issue (extra=43,360,920, of which 42,820,881 are engine==0.0): p1_factor_engine.py line 1160, _op_earnings_increase_streak initializes out = pd.DataFrame(0.0, ...) over the ENTIRE month x permno grid and never masks by ibq availability or universe, so it emits 0 even where no quarterly data exists; script inner-joins SignalMasterTable with m_QCompustat (lines 27-32) so oracle only exists on that universe. The 5,000 value-divergent cells (max_abs=8): script computes chearn and its 3..24m lags by self-merges INSIDE the merged panel, so panel gaps yield NaN lags which the streak logic treats as positive while boundary tests NaN<=0 are False; engine sees true grid values. Sampled: permno 84441 2006-03 raw chearn lags [7.77,0.82,1.76,2.25,1.17,2.57,-1.33,...] -> true streak 6, engine=6, oracle=0 (script lag rows missing in merged panel so no boundary fired); permno 80479 2001-11 raw chearn=-1.101 (negative) -> engine=0, oracle=1 (script chearn NaN via missing l12 merge row, treated as positive, l3=-0.049<=0 -> nincr=1).",
+      "proposed_fix": "Keep streak logic (it matches the script's quirks including NaN-as-positive and the streak>8 -> 0 falloff) but mask the output to the data/universe domain: out = out.where(ibq.notna()-row-availability grid) and intersect with the SignalMasterTable universe mask. To eliminate the residual 5,000 cells exactly, compute chearn/lags only on months present in the SMT-merged panel (i.e. NaN-out ibq outside universe BEFORE building chearn) \u2014 that reproduces the oracle's gap-induced NaN-lag semantics.",
+      "confidence": "certain"
+    },
+    {
+      "factor": "OrderBacklogChg",
+      "discrepancy_type": [
+        "timing_lag_shift",
+        "oracle_artifact"
+      ],
+      "evidence": "Tree (delta 12 months of zero_to_null(ob/avg_at)) matches script intent; only 4/557,953 cells beyond tol plus 4,690 missing-in-engine. Script OrderBacklogChg.py lines 30, 37 uses POSITIONAL df.groupby('permno').shift(12) for both at_lag12 and OrderBacklog_lag12; engine _op_lag (p1_factor_engine.py line 704-709) is a calendar shift on the monthly grid. Sampled permno 79901 1986-08 (88 rows over a 93-month span, i.e. 5 gap months): oracle=-0.8915588 equals my positional-shift reconstruction exactly; engine=-0.8471210 equals the calendar-shift reconstruction exactly. The 4,690 missing-in-engine cells are the same gap permnos where positional shift reaches >12 months back (oracle gets a value, calendar lag is NaN). The original Stata used xtset l12. (calendar), so the Python oracle's positional shift is itself a deviation \u2014 the engine is closer to the published Stata definition.",
+      "proposed_fix": "No engine formula change recommended \u2014 document as oracle_artifact (Python script's positional shift diverges from Stata calendar l12 at date gaps; only 4 value cells + 4,690 coverage cells). If bit-exact oracle parity is required, add a positional-shift-within-observed-rows lag variant, but that degrades correctness.",
+      "confidence": "certain"
+    },
+    {
+      "factor": "PS",
+      "discrepancy_type": [
+        "universe_coverage",
+        "formula_error",
+        "oracle_artifact"
+      ],
+      "evidence": "(a) Extra=121,417: engine scores permnos outside SignalMasterTable \u2014 sampled 1990-06: 164 extra permnos, 0 of them in SignalMasterTable that month. (b) Missing=61,761: BM top-quintile membership computed differently \u2014 engine _op_piotroski_score (p1_factor_engine.py lines 2579-2581) uses _row_bucket (rank pct * 5, ceil) over its LARGER universe, script PS.py lines 194-201 uses pd.qcut(q=5, duplicates='drop') on the SMT-merged universe; 1990-06 had 104 oracle-valued permnos absent from engine, all present in the CRSP grid (they fall in engine's quintile 4 because quintile breakpoints shift with the universe). (c) 14,591 value-divergent cells, 14,039 of them diff = -1 (engine lower): p9 shrout test \u2014 script computes l12_shrout with stata_multi_lag on the SMT+Compustat+CRSP inner-merged panel, so a missing Compustat lag row makes l12_shrout NaN -> handle_stata_edges -> +inf -> p9=1; engine lags shrout on the full monthlyCRSP grid and sees the real value. Sampled permno 52230 1972-06: engine=7 oracle=8; shrout=2.118 vs true l12 shrout=1.925 -> l12-shrout-shrout=-0.193 -> engine p9=0; the 1971-06 m_aCompustat row is absent (l12 row=None), so the script's merged panel had l12_shrout=NaN -> p9=1.",
+      "proposed_fix": "Three changes: (1) mask output to the SignalMasterTable universe before anything else; (2) compute the BM quintile with pd.qcut-equivalent breakpoints (not rank-ceil) on that masked universe; (3) NaN-out l12_shrout where the m_aCompustat panel lacks the lag-12 row (replicating merge-panel lag semantics) before the p9 inf-substitution. Because the score mixes three-source merge-domain quirks with a cross-sectional qcut, if (2)/(3) are awkward in the DSL, demote to script.",
+      "confidence": "certain"
+    },
+    {
+      "factor": "PctAcc",
+      "discrepancy_type": [
+        "formula_error",
+        "mean_denominator"
+      ],
+      "evidence": "Two fallback-branch errors plus a denominator mismatch. Script PctAcc.py lines 60-77: when oancf is missing, PctAcc = alt_calc/|ib| where alt_calc = (dACT - dCHE - (dLCT - dDLC - dTXP - dp)) \u2014 alt_calc IS the accrual (numerator directly). Engine _op_cash_flow_from_operations_fallback (p1_factor_engine.py line 755-756) (i) omits the txp term entirely (op signature has no txp arg) and (ii) is used as a CFO substitute so the tree computes ib - fallback, i.e. the sign/structure of the numerator is wrong. Sampled IBM 1964-06 (oancf NaN): oracle=1.226896 = alt_calc/|ib| exactly; engine=-0.118022 = (ib - alt_eng)/|ib| exactly (alt_eng lacking dTXP=31.624). Max-diff cell permno 31405 1980-06: ib=0, oancf NaN -> oracle=7241 = alt_calc/0.01 (alt=72.41); engine=-6612 = -alt_eng/0.01 (alt_eng=66.12; difference 6.29 = missing dTXP). Denominator: engine max(|ib|,0.01) vs script |ib| with 0.01 ONLY when ib==0 exactly \u2014 differs whenever 0<|ib|<0.01 (contributes to max_abs=13,853 along with the fallback errors). Extra=282,345: engine fallback needs no txp so it emits values where txp (or its lag) is missing and oracle is NaN. Direct branch verified matching: IBM 1989-06 engine=oracle=-0.107266.",
+      "proposed_fix": "Replace the fallback op with a balance-sheet ACCRUALS op (not CFO): accruals_bs = (act-LAG(act,12)) - (che-LAG(che,12)) - ((lct-LAG(lct,12)) - (dlc-LAG(dlc,12)) - (txp-LAG(txp,12)) - dp), add txp to the args; numerator = where(oancf.notna(), ib-oancf, accruals_bs). Denominator = where(ib==0, 0.01, ABS(ib)) \u2014 not MAX(ABS(ib),0.01).",
+      "confidence": "certain"
+    },
+    {
+      "factor": "STreversal",
+      "discrepancy_type": [
+        "timing_lag_shift",
+        "fill_domain",
+        "universe_coverage"
+      ],
+      "evidence": "Tree: {op:'lag', args:[monthlyCRSP.ret, 1]}. Script STreversal.py L37-44: STreversal = ret.fill_null(0), NO lag, over SignalMasterTable rows. Sampled IBM (permno 12490): 2000-01 eng=0.046695 = ret(1999-12), ora=0.040556 = ret(2000-01); 2000-02 eng=0.040556 = ret(2000-01), ora=-0.083564 = ret(2000-02) \u2014 engine is exactly ret_{t-1}, oracle is ret_t, for all 8 sampled months. miss_cand=79,899: oracle=0.0 on SMT rows where CRSP ret is NaN (e.g. 1925-12 permno 10006: crsp ret_t=NaN, ora=0.0, eng=NaN) \u2014 the script's fill_null(0). extra=1,009,972: engine emits lagged ret for non-SMT securities (unfiltered monthlyCRSP grid).",
+      "proposed_fix": "Replace tree with FILLNA(VAR(monthlyCRSP.ret), 0) \u2014 remove the LAG(...,1) entirely \u2014 and restrict the zero-fill domain and output to the SignalMasterTable row set (shrcd 10/11/12, exchcd 1/2/3 listing months), so zeros are manufactured only on existing SMT rows, not the whole grid.",
+      "confidence": "certain"
+    },
+    {
+      "factor": "Size",
+      "discrepancy_type": [
+        "formula_error",
+        "universe_coverage"
+      ],
+      "evidence": "Tree: log(abs(monthlyCRSP.mve_permco)). Script Size.py L28: Size = np.log(mve_c) from SignalMasterTable. CRSPMonthly.py L103-112: mve_c = shrout*|prc| per permno; mve_permco = sum of mve_c across share classes of the permco. Sampled worst cell (1992-12, permno 75255): mve_c=0.67253 -> log=-0.39671 = oracle; mve_permco=3505.286 -> log=8.16203 = engine (max_abs 8.5587). All 74,572 both-valued diffs are multi-class permco months; IBM (single-class) matches exactly (2000-01: eng=ora=12.217716 = log(mve_c)=log(mve_permco)). extra=981,878: engine covers unfiltered monthlyCRSP vs SMT universe.",
+      "proposed_fix": "Change the variable to mve_c: tree = LOG(VAR(monthlyCRSP.mve_c)) with no ABS (mve_c>=0 by construction; script propagates NaN, and log(0)=-inf must be preserved as the script keeps -inf), and mask output to the SignalMasterTable universe.",
+      "confidence": "certain"
+    },
+    {
+      "factor": "VarCF",
+      "discrepancy_type": [
+        "universe_coverage"
+      ],
+      "evidence": "Tree: pow(rolling_std(div(add(ib,dp), monthlyCRSP.mve_permco), 60m, min24), 2) \u2014 formula itself matches VarCF.py L40+L49-56 (asrol std 60/24 then **2). Sampled (1990-08, permno 54738): std^2 of tempCF over the script's SMT row set in the trailing 60 months (59 obs) = 19331.747 = oracle 19331.746 exactly; std^2 over the engine's full-CRSP calendar window (60 obs, one extra month SMT excludes) = 214551.835 = engine 214551.83 exactly. Same for 1990-09/10. So all 5,046 value diffs (max 195,220) come from window contents including non-SMT months; extra=818,420 from the unfiltered grid.",
+      "proposed_fix": "Keep the tree but mask the tempCF input panel to the SignalMasterTable row set BEFORE rolling_std (e.g. wrap the div node in a MASK_SMT op / where(smt_member)), then mask the output to SMT-span rows. Window/min_obs semantics (60/24, ddof=1, calendar window) are already correct.",
+      "confidence": "certain"
+    },
+    {
+      "factor": "RevenueSurprise",
+      "discrepancy_type": [
+        "universe_coverage",
+        "formula_error"
+      ],
+      "evidence": "Engine op _op_seasonal_surprise_zscore (p1_factor_engine.py L1130-1154) reproduces the script's math (NaN-skipping drift mean, ddof=1 SD) but computes it on the m_QCompustat panel mapped gvkey->permno via m_aCompustat (DatasetStore.get L433-452), while the script (RevenueSurprise.py L24-38) computes on SMT(gvkey notna) INNER JOIN m_QCompustat rows only. Sampled (1986-05, permno 17655): replication on script row set -> z=2112.5358 (=oracle 2112.536; SD=2.01e-05 from only 2 non-null hist lags), on engine row set -> z=0.956449 (=engine 0.95644873; SD=0.03251 from 8 non-null lags). Same pattern at (1990-06, 44987): ora=2000.84 vs eng=27.77. extra=280,577: 1948/2000 sampled cells outside the SMT-gvkey universe. Secondary: engine keeps cells with sd in (1e-10, 1e-8] that script drops (L99 SD>1e-8 vs engine L1154 sd>1e-10).",
+      "proposed_fix": "Mask the revps panel (div(revtq,cshprq)) to the SMT-with-gvkey \u2229 m_QCompustat cell set before seasonal_surprise_zscore so every calendar lag / drift / SD term sees exactly the script's row set; change the SD guard in _op_seasonal_surprise_zscore from 1e-10 to 1e-8; mask output to SMT.",
+      "confidence": "certain"
+    },
+    {
+      "factor": "ShareVol",
+      "discrepancy_type": [
+        "fill_domain",
+        "universe_coverage",
+        "formula_error"
+      ],
+      "evidence": "miss_cand=313,080: of 400 sampled, 340 have NaN vol in the 3-month window and 40 are first-two obs \u2014 script ShareVol.py L124-133 uses stata_ineq_pl where NULL tempShareVol > 10 is TRUE -> manufactured 1 (e.g. 1925-12 permno 10006 vol=NaN: ora=1.0 eng=NaN; 1929-07 10508 obs#43 vol=[0,0,NaN]: ora=1.0 eng=NaN); engine _op_share_volume_signal L1045-1054 leaves NaN. 57 both-valued flips: script panel starts at SMT entry \u2014 permno 15165 SMT starts 1926-06 (CRSP from 1925-12), so script obs0 has null lags -> tempShareVol null -> 1 (ora), engine computes turnover 3.6 from full CRSP history -> <5 -> 0 (eng). extra=334,981: 999/1000 sampled outside SMT. Additional engine bug: dshrout = shrout.ne(lag(shrout,1)) is True at each stock's first row (NaN comparison) where script L79-86 forces False, so engine wrongly masks every stock's obs #2 via l2_dshrout.",
+      "proposed_fix": "In _op_share_volume_signal: (1) restrict vol/shrout panels and all shifts to the SMT row-span per permno (universe mask before lags); (2) add the Stata missing-comparison branch: cells with NaN avg_turnover that survive the drop filter get 1.0 (out[avg_turnover.isna()]=1.0 after the <5/>10 assignments); (3) compute dshrout with first-obs-of-span forced False (e.g. dshrout & lag(shrout,1).notna()); (4) mask final output to SMT rows.",
+      "confidence": "certain"
+    },
+    {
+      "factor": "UpRecomm",
+      "discrepancy_type": [
+        "universe_coverage",
+        "formula_error",
+        "oracle_artifact"
+      ],
+      "evidence": "extra=62,230: 1000/1000 sampled cells outside SMT \u2014 engine maps ticker->permno via IBESCRSPLinkingTable (wider than SMT) with no universe filter, script inner-joins to SMT (UpRecomm.py L62). miss_cand=109: _ibes_permno_month_map (engine L513-519) drop_duplicates(['tickerIBES','time_avail_m'], keep='first') keeps ONE permno per ticker-month \u2014 ticker CIT1 1993-11 maps to permnos 23879 AND 23887 in both link table and SMT; engine drops 23887 (ora=0.0, eng=NaN). 8 value flips: script L31-35 takes groupby(...).last() ireccd in RAW FILE ORDER (no anndats sort) while engine L1471 sorts by anndats first \u2014 MRBA 1999-05: analyst 41343 has recs (anndats 5/25 ireccd=2.0, 5/27 ireccd=3.0); file-order last=2.0 (script monthly mean=2.0), anndats-sorted last=3.0 (engine mean=3.0); June mean=2.4 -> script 2.4<2.0 False -> ora=0, engine 2.4<3.0 True -> eng=1. The oracle's dependence on arbitrary parquet row order is a script quirk (Stata bys ... : keep last after sort).",
+      "proposed_fix": "In _op_recommendation_change_indicator: keep ALL (tickerIBES,permno) pairs per month (drop the dedup, fan out like the script's inner join), and mask output to the SMT universe. For the 8 flip cells, drop the anndats sort in _prepare_recommendation_monthly to replicate file-order .last() exactly \u2014 or document them as oracle_artifact (the engine's chronological ordering is the defensible one).",
+      "confidence": "certain"
+    },
+    {
+      "factor": "REV6",
+      "discrepancy_type": [
+        "universe_coverage",
+        "oracle_artifact",
+        "timing_lag_shift"
+      ],
+      "evidence": "Engine _op_sum_scaled_revisions (L2296-2328) reproduces the script's IBES prep and 7-term skipna=False sum, but builds the panel on IBESCRSPLinkingTable rows with monthlyCRSP prc, while REV6.py L60-75 uses SignalMasterTable rows and SMT prc, with POSITIONAL shift(1). The 91 both-valued diffs: permno 62519 (BLK) has an SMT gap 1994-06..1995-04; at 1995-05 the script's shift(1) pulls meanest_lag1/prc_lag1 from 1994-05 (prc=4.00, 12 months stale) -> ora REV6=0.16025; engine's link-table rows are contiguous 1994-08..1995-05 (prc_lag=16.75) -> eng=0.002994. The oracle treats a 12-month-old value as the 1-month lag \u2014 a Python-port artifact (Stata l. is calendar-true and would yield missing). extra=188,095: 993/1000 sampled outside SMT. miss_cand=1,086: 144/200 sampled are permno-months absent from the deduped link map or secondary permnos of a ticker-month dropped by keep='first'; the rest are row-set shift-alignment differences.",
+      "proposed_fix": "In _op_sum_scaled_revisions: build the base panel from SignalMasterTable (permno, tickerIBES, prc) instead of the deduped link map + CRSP prc, keep multi-permno ticker fan-out, and compute shifts over SMT row order per permno (this replicates the oracle exactly, including its gap-jumping lags); mask output to SMT. If calendar-true lags are preferred instead, keep contiguous-month shifts and document the 91 gap cells as oracle_artifact.",
+      "confidence": "certain"
+    },
+    {
+      "factor": "VolMkt",
+      "discrepancy_type": [
+        "formula_error",
+        "mean_denominator",
+        "timing_lag_shift"
+      ],
+      "evidence": "Script VolMkt.py L40/L58: denominator mve_c = shrout*|prc| (permno-level); tree divides by monthlyCRSP mve_permco (permco-aggregated). Sampled permno 29946 (multi-class permco) 1970-10: engine=0.005653 == rolling12/mve_permco (mve_permco=249.68), oracle=0.008269 == rolling12/mve_c (mve_c=170.68); ratio engine/oracle == mve_c/mve_permco verified allclose over all common cells. 460,992 raw monthlyCRSP rows have mve_c != mve_permco, matching the 411,852 beyond-tol cells. Extra-in-engine 152,598: script L51 rolling_mean(window_size=12, min_samples=10) vs engine p1_factor_engine.py L776 min_periods=max(1,window//2)=6 \u2014 IBM (12490) engine emits 0.071572 at 1926-06 (7th obs, 6 non-null) while oracle first value 1926-10 (10th non-null obs). Inf: oracle keeps 2,249 inf cells (mve_c==0, save_predictor retains inf), engine 191 (mve_permco==0) -> max_abs=Infinity. Script window is also POSITIONAL 12-row (never sorts; file order) vs engine 12-calendar-row grid window \u2014 residual diffs where monthlyCRSP has month gaps.",
+      "proposed_fix": "Tree: VolMkt = DIV(ROLLING_MEAN(MUL(ABS(prc), vol), window_months=12, min_obs=10), MUL(shrout, ABS(prc))) \u2014 replace mve_permco with shrout*|prc| and pass min_obs=10 (engine op already accepts min_obs, default 6 is wrong here). Calendar-vs-positional window remains a small residual for gapped permnos; acceptable or handle via positional-window op.",
+      "confidence": "certain"
+    },
+    {
+      "factor": "dNoa",
+      "discrepancy_type": [
+        "formula_error",
+        "fill_domain",
+        "universe_coverage"
+      ],
+      "evidence": "Script dNoa.py L64-75: tempOL = at - dltt.fillna(0) - mib.fillna(0) - dlc.fillna(0) - pstk.fillna(0) - ceq. Tree OL branch uses variable 'dc' instead of 'dlc' and OMITS pstk entirely, with plain NaN-propagating subs. IBM (12490) 2024-06 (dlc=7246, dc=0.0, pstk=0): engine=0.002185 == recomputed tree formula with dc/no-pstk; oracle=0.014861 == recomputed script formula with dlc+pstk. 2.67M of 3.1M both-valued cells beyond tol because dc!=dlc for essentially every firm-month. Missing-in-engine 16,660 partly from NaN-propagation where dlc (0.98% null), pstk (1.87% null), mib null vs script zero-fill, plus m_aCompustat rows outside engine grid.",
+      "proposed_fix": "Tree: OL = SUB(SUB(SUB(SUB(SUB(at, COALESCE(dltt, 0)), COALESCE(mib, 0)), COALESCE(dlc, 0)), COALESCE(pstk, 0)), ceq) \u2014 i.e. replace 'dc' with 'dlc', add pstk, and wrap the four debt/preferred vars in COALESCE(x,0) scoped so output stays NaN where at/che/ceq are NaN (they appear un-coalesced, so NaN propagates correctly). Keep dNoa = DIV(DELTA(NOA,12), LAG(at,12)) with LAG(at,12)==0 -> NaN guard (script L96-100 emits NaN, never inf).",
+      "confidence": "certain"
+    },
+    {
+      "factor": "grcapx",
+      "discrepancy_type": [
+        "universe_coverage",
+        "timing_lag_shift",
+        "formula_error"
+      ],
+      "evidence": "Script ZZ1_grcapx_grcapx1y_grcapx3y.py L73 inner-merges SignalMasterTable (shrcd/exchcd universe); engine evaluates on unfiltered m_aCompustat grid: of 2,000 sampled extra-in-engine cells only 1.07% are in SMT (e.g. permno 84629 2004-05 eng=-0.952, not in SMT) -> explains extra 301,508. Script L105-106 patches capx := ppent - l12_ppent where capx NaN & FirmAge>=24 (FirmAge = per-permno row position L86, censored where == tempcrsptime L91-97), BEFORE lags; plus L110-112 POSITIONAL shift(24) on the gapped SMT-merged panel. Sampled missing-in-engine cells all have capx NaN at t or t-24 (e.g. 34746 1995-04 oracle=8.615 with capx@t=NaN, ppent@t=156.05 \u2014 patch-generated) -> explains miss 159,521. Beyond-tol 11,940: e.g. 36767 1974-07 engine=1.2324=(0.759-0.34)/0.34 (calendar t-24) vs oracle=26.107 (positional shift landed on capx=0.028 across a gap). IBM matches exactly (0 beyond-tol). Inf on both sides (eng 17,552 / orc 15,749, l24_capx==0 retained) -> max_abs=Infinity where inf meets finite.",
+      "proposed_fix": "Demote to script (or a dedicated op): the capx patch depends on FirmAge = row position within the SMT-inner-joined panel with CRSP-start censoring, and all lags are positional shifts on that gapped panel \u2014 not expressible as calendar LAG/DIV DSL nodes. Minimum viable tree-side fix if kept: mask output to SMT universe (kills the 301k extras) and add the ppent-patch as COALESCE(capx, WHERE(firm_age>=24, SUB(ppent, LAG(ppent,12)))), but positional-lag semantics still diverge on gapped permnos.",
+      "confidence": "certain"
+    },
+    {
+      "factor": "grcapx3y",
+      "discrepancy_type": [
+        "universe_coverage",
+        "timing_lag_shift",
+        "formula_error"
+      ],
+      "evidence": "Same script (L124: grcapx3y = capx/(l12+l24+l36)*3; tree 3*capx/(l12+l24+l36) is algebraically identical \u2014 IBM 2023-06 eng=orc=tree=0.579673). Extra 266,209 cells: only 1.2% of 2,000 sampled are in SMT -> unfiltered universe. Missing 171,287: 200/200 sampled cells have NaN raw capx at t/t-12/t-24/t-36, i.e. filled by the script's ppent-patch (L105-106) and/or positional shift bridging (L110-112). Inf eng 3,016 / orc 2,332 (zero lag-sum retained by save_predictor) -> max_abs=Infinity.",
+      "proposed_fix": "Same as grcapx: demote to script (shared script emits both factors), or at minimum SMT-universe mask + ppent-patch coalesce; positional shift(12/24/36) on the gapped SMT-merged panel remains irreducibly script-shaped.",
+      "confidence": "certain"
+    },
+    {
+      "factor": "realestate",
+      "discrepancy_type": [
+        "formula_error",
+        "universe_coverage",
+        "mean_denominator"
+      ],
+      "evidence": "Tree passes m_aCompustat 'sic' to industry_adjusted_mean; script realestate.py L39-48 uses sicCRSP from SignalMasterTable (string-truncated 2-digit). Proven at IBM (12490) 2000-06: Compustat sic=7370 -> engine industry '73' (n=781, mean=0.14443, full-Compustat universe, inf kept) gives 0.262394-0.14443=0.1179683 == engine actual 0.1179683; sicCRSP 2D='35' on SMT-inner-join universe with tempN(at)>=5 gate and inf->NaN scrub gives mean=0.19338 -> 0.069009 == oracle 0.069009185. IBM is in a DIFFERENT industry per source. Cross-sectional mean shifts for every stock -> 1,432,529 of 1,432,612 both-valued cells beyond tol. Engine has 1,710 inf cells vs oracle 0 (script L69 replaces +/-inf with NaN) -> max_abs=Infinity. Gate mismatch: engine p1_factor_engine.py L896-898 gates on count of non-null re; script L51-52 gates on tempN = count of non-null 'at' per (sic2D,month) computed BEFORE the at/ppe drops (L55-56).",
+      "proposed_fix": "Tree: (1) feed sicCRSP (SignalMasterTable) not m_aCompustat sic to industry_adjusted_mean; (2) mask to SMT universe (inner-join semantics, drops the 168,741 extras); (3) scrub inf->NaN on the coalesced ratio before the industry mean (add a nan_inf op or guard in DIV); (4) change the min_industry_obs gate to count non-null 'at' per industry-month pre-filter (needs an extra op input, e.g. industry_adjusted_mean(re, sic, count_basis=at, min_industry_obs=5)). If (4) is deemed too script-shaped, demote to script.",
+      "confidence": "certain"
+    },
+    {
+      "factor": "AccrualsBM",
+      "discrepancy_type": [
+        "universe_coverage"
+      ],
+      "evidence": "0 beyond-tol on 203,956 both-valued cells (2000-06 sample: 387 both-valued, 100% agree) \u2014 the {1,0} logic and fastxtile replication are consistent. Discrepancy is domain-only: script AccrualsBM.py L80 right-joins onto SignalMasterTable (shrcd 10/11/12, exchcd 1/2/3) and L117-121 computes monthly BM/accrual quintile breakpoints WITHIN that sample; engine op _op_accruals_bm_signal (p1_factor_engine.py L1057-1063) buckets the whole unfiltered grid row. Of 2,000 sampled extra-in-engine cells only 25.5% are in SMT (74.5% outside the SMT universe entirely); engine emits 235,095 signals vs oracle 220,735. The in-SMT extras/missing (miss 16,779) are breakpoint shifts moving stocks in/out of the extreme quintiles (a 5->4 shift converts a value to NaN, never a 1<->0 flip, hence 0 value diffs).",
+      "proposed_fix": "Mask the bm and accruals inputs to the SMT universe BEFORE _row_bucket so monthly breakpoints are computed on the SMT cross-section, and mask the output to SMT. E.g. add a universe-mask op: accruals_bm_signal(MASK_SMT(bm), MASK_SMT(accruals), ceq), or apply a global SignalMasterTable grid mask pre-bucketing for this factor.",
+      "confidence": "certain"
+    },
+    {
+      "factor": "AssetGrowth",
+      "discrepancy_type": [
+        "timing_lag_shift",
+        "formula_error",
+        "oracle_artifact"
+      ],
+      "evidence": "0 beyond-tol on 3.2M both-valued cells (IBM 2024-05..12 engine=oracle=recomputed to 6 dp). Missing-in-engine 15,556: 400/400 sampled cells are gap-bridge cases \u2014 m_aCompustat has no row at calendar t-12, but script AssetGrowth.py L63 groupby(permno).shift(12) is POSITIONAL and reaches 12 observed rows (>12 calendar months) back, producing a value where the engine's calendar LAG(at,12) is correctly NaN; 92% of these cells exist in monthlyCRSP so it is not a universe issue. These oracle values use an at-lag from >12 months earlier \u2014 an artifact of Stata-style positional lags (oracle_artifact component). Extra-in-engine 30: all sampled are inf cells, e.g. permno 82716 2000-06..2001-01 engine=inf with at@t=1.021, at@t-12=0.0 \u2014 script L66-70 np.where(l12_at==0, NaN, ...) maps zero denominator to NaN, engine plain div emits inf.",
+      "proposed_fix": "Add the zero-denominator guard: AssetGrowth = WHERE(EQ(LAG(at,12), 0), NaN, DIV(SUB(at, LAG(at,12)), LAG(at,12))) \u2014 or give the engine div op a zero->NaN mode for this factor. For the 15,556 gap-bridged cells, either accept the engine's calendar semantics as correct (document oracle positional-lag artifact) or add a positional-lag op over the m_aCompustat row set if exact oracle parity is required.",
+      "confidence": "certain"
+    },
+    {
+      "factor": "ChAssetTurnover",
+      "discrepancy_type": [
+        "fill_domain",
+        "oracle_artifact"
+      ],
+      "evidence": "Script ChAssetTurnover.py:49 does df['ppent']=df.groupby('permno')['ppent'].ffill() before building temp; the engine tree has no ffill node around the ppent var. Proof: permno 33144 @ 1967-04: raw m_aCompustat ppent=NaN (was 0.2 through 1967-03); replicating the script WITH ffill yields ChATO=-0.010255 == oracle -0.010254933, engine=NaN. Vectorized audit: of 13520 misses, 13508 have ppent NaN at t, t-12 or t-24 (12252 at t alone); the remaining 12 are cells where oracle==inf (e.g. permno 11460 @ 1991-04: sale=0.204, temp=+0.309, temp_l12=-0.309 -> avg denominator 0 -> ATO=inf; oracle stores inf, engine drops non-finite). Both-valued cells agree exactly (IBM 2000-01..08: engine=oracle=-0.333311/0.081485). extra=0.",
+      "proposed_fix": "Wrap ppent in a forward-fill op: replace var(ppent) with FFILL(ppent) inside both the current and the LAG(...,12) copies of temp = (rect+invt+aco+FFILL(ppent)+intan)-(ap+lco+lo). Wide-panel ffill reproduces script semantics because m_aCompustat rows are monthly-expanded (verified: gap re-entry cell 33144/1967-04 matches). The 12 residual cells are oracle_artifact (inf written by the script when avg assets = 0); keep engine's non-finite masking and exclude infs on the oracle side in reconciliation.",
+      "confidence": "certain"
+    },
+    {
+      "factor": "ChForecastAccrual",
+      "discrepancy_type": [
+        "universe_coverage",
+        "timing_lag_shift"
+      ],
+      "evidence": "EXTRAS (62805): engine _op_chforecast_accrual_signal (p1_factor_engine.py:2396) maps meanest to permno via IBESCRSPLinkingTable, script (ChForecastAccrual.py:47-55) via SignalMasterTable tickerIBES. Sampled 2000 extras: 1969/2000 permno-months are absent from SignalMasterTable entirely (universe filter shrcd/exchcd), 31 in SMT get meanest via link table where SMT-based chain lacks it. MISSES (1651): engine computes accrual lags with grouped.shift(12) positional (engine lines 2400-2409); script uses calendar-date-offset merge lags (ChForecastAccrual.py:63-78). The monthly qcut median pool therefore differs: permno 70578 @ 1978-02 has tempAccruals=0.0159874; script calendar-lag pool (n=3429) median=0.0158684 -> tempsort=2 -> oracle=0 (meanest 1.90<1.98); engine positional-shift pool (n=3452, includes stale across-gap lags) median=0.0160770 -> tempsort=1 -> engine NaN. Both-valued cells agree (values are 0/1, invariant to pool).",
+      "proposed_fix": "Two changes inside _op_chforecast_accrual_signal: (1) compute the six 12-month lags via calendar merge on time_avail_m - DateOffset(months=12) (matching script create_calendar_lag) instead of grouped.shift(12); (2) source the permno->tickerIBES mapping from SignalMasterTable (or equivalently mask the final wide panel to SMT permno-months) instead of _ibes_permno_month_map/IBESCRSPLinkingTable. Since this factor is already a bespoke long-form op (median split is irreducibly cross-sectional), fixing it in-op is appropriate; alternatively demote to script.",
+      "confidence": "certain"
+    },
+    {
+      "factor": "ChInv",
+      "discrepancy_type": [
+        "timing_lag_shift",
+        "oracle_artifact"
+      ],
+      "evidence": "Script ChInv.py:38-40 uses POSITIONAL groupby shift(12) on deduped m_aCompustat rows; engine LAG/DELTA (_op_lag, p1_factor_engine.py:704-710) shifts the calendar wide panel = strict 12-calendar-month lag. All 15586 misses are cells just after gaps in a permno's m_aCompustat coverage. Proof: permno 29103 has rows ...1983-05 then 1986-06 (37-month gap). At 1986-06 script shift(12) picks the row 12 POSITIONS back = 1982-06 (invt_l12=69.883, at_l12=165.399, 48 months stale) giving ChInv=0.2636067 == oracle 0.2636067; calendar month 1985-06 does not exist in m_aCompustat -> engine NaN. extra=0, both-valued cells agree exactly (IBM 2000-01..08: 0.000728/-0.003825 both sides). The miss mask is bit-identical to DelCOA's (same mechanism). Note the oracle values themselves are quirky: the 'annual change' uses data up to 4 years old, diverging from OSAP's original Stata calendar l12 intent.",
+      "proposed_fix": "If oracle parity is required: change the tree's DELTA(invt,12)/LAG(at,12) to positional semantics, e.g. LAG(x,12,mode=positional,presence=m_aCompustat) implemented as shift(12) applied to each permno's series restricted to months where the permno has an m_aCompustat row, then re-broadcast. Otherwise document as oracle_artifact (positional shift across coverage gaps) and mask these 15586 oracle cells out of reconciliation; the engine's calendar lag is arguably the more faithful economic definition.",
+      "confidence": "certain"
+    },
+    {
+      "factor": "ChNNCOA",
+      "discrepancy_type": [
+        "timing_lag_shift",
+        "oracle_artifact"
+      ],
+      "evidence": "Identical mechanism to ChInv: script ChNNCOA.py:54 uses positional groupby shift(12) on temp=((at-act-ivao)-(lt-dlc-dltt))/at; engine DELTA(...,12) is a calendar shift on the wide panel. Proof: permno 18331 @ 1953-06 (first missing cell): replicating the script positionally gives ChNNCOA=0.06382457 == oracle 0.06382457, engine NaN; the row 12 positions back is dated 1951-06 (24 months earlier) and calendar month 1952-06 is absent from m_aCompustat. miss=15252 (slightly fewer than ChInv's 15586 because ivao/lt/dlc/dltt missingness kills some of the same cells), extra=0, both-valued agree exactly (IBM 2000-01..08 -0.002265/-0.010070 both sides).",
+      "proposed_fix": "Same as ChInv: convert the DELTA(temp,12) node to positional lag over months where the permno exists in m_aCompustat (LAG mode=positional), or classify the 15252 across-gap oracle values as oracle_artifact and mask them.",
+      "confidence": "certain"
+    },
+    {
+      "factor": "ConsRecomm",
+      "discrepancy_type": [
+        "universe_coverage",
+        "formula_error"
+      ],
+      "evidence": "Aggregation logic matches (analyst-month last -> mean -> thresholds 1.5/3.0; _prepare_recommendation_monthly engine lines 1461-1475 vs ConsRecomm.py:41-58) and both-valued cells agree (cells_beyond_tol=0). EXTRAS (18547): engine _op_binary_recommendation_level (line 2061) expands ticker->permno via IBESCRSPLinkingTable; script (ConsRecomm.py:76) inner-merges with SignalMasterTable. Sampled ALL 18547 extras: 18547/18547 permno-months are not present in SignalMasterTable (outside shrcd 10/11/12, exchcd 1/2/3 universe). MISSES (37): engine _ibes_permno_month_map (p1_factor_engine.py:518) drop_duplicates(['tickerIBES','time_avail_m'], keep='first') keeps only ONE permno per ticker-month; script's SMT merge fans out to all permnos sharing the ticker. Proof: miss cell permno 23887 @ 1993-11, ticker CIT1 maps to permnos [23879, 23887] in both SMT and the link table; engine's dedup kept only 23879.",
+      "proposed_fix": "(1) Mask the output panel to the SignalMasterTable permno-month universe (or use SMT's permno->tickerIBES mapping for the expansion, which is what the script does). (2) Remove the keep-first dedup in the ticker->permno expansion so one ticker-month maps to every SMT permno carrying that ticker. Both are op/infrastructure changes to _op_binary_recommendation_level / _ibes_permno_month_map, no tree change needed.",
+      "confidence": "certain"
+    },
+    {
+      "factor": "DebtIssuance",
+      "discrepancy_type": [
+        "fill_domain",
+        "universe_coverage"
+      ],
+      "evidence": "MISSES (358000): script DebtIssuance.py:54 computes ((dltis>0) & dltis.notna()).astype(int), so missing dltis becomes 0, not NaN; engine _op_positive_indicator (p1_factor_engine.py:799-800) is (x>0).where(x.notna()) -> NaN on missing. Sampled 1000 misses: 1000/1000 have dltis=NaN in m_aCompustat and oracle value 0.0. EXTRAS (669237): script inner-merges SignalMasterTable (line 44) and nulls the signal when shrcd>11 or BM=log(ceq/mve_permco) is NaN (lines 51-58); the engine tree has no SMT merge or mask. Sampled 2000 extras: 1267 permno-months not in SMT, 407 shrcd>11, 326 BM NaN (ceq missing/nonpositive or mve missing), 0 unexplained. Both-valued cells agree exactly (IBM 1990-01..08: engine=oracle=1.0 with dltis 4540/6471).",
+      "proposed_fix": "Tree change: DebtIssuance = MASK(positive_indicator(FILL_ZERO_WHERE_PRESENT(dltis)), condition = in_SMT AND shrcd<=11 AND NOTNA(LOG(DIV(ceq, mve_permco)))). Concretely: (a) fill dltis NaN with 0 on permno-months that exist in m_aCompustat (do NOT zero-fill the whole grid); (b) add a universe/mask op sourcing shrcd and mve_permco from SignalMasterTable. If the DSL cannot reference SignalMasterTable panels, demote to script \u2014 the BM/shrcd conditioning is the bulk of the 669k extras and is not expressible today.",
+      "confidence": "certain"
+    },
+    {
+      "factor": "DelCOA",
+      "discrepancy_type": [
+        "timing_lag_shift",
+        "oracle_artifact"
+      ],
+      "evidence": "Script DelCOA.py:51-53 uses positional groupby shift(12) for lag_at/lag_act/lag_che; engine DELTA/LAG are calendar shifts on the wide panel. The 15586-cell miss mask is bit-identical to ChInv's (verified (mI.values==mD.values).all() == True). Proof: permno 29103 @ 1986-06 (after the 1983-05 -> 1986-06 gap): positional replication gives DelCOA=0.36827181 == oracle 0.3682718 using the 1982-06 row as 'lag12'; engine calendar lag -> NaN (1985-06 absent). extra=0; both-valued agree exactly (IBM 2000-01..08: 0.044475/0.008433 both sides).",
+      "proposed_fix": "Same as ChInv/ChNNCOA: switch DELTA(act-che,12) and LAG(at,12) to positional lag over the permno's observed m_aCompustat months (LAG mode=positional, presence=m_aCompustat), or treat the across-gap oracle values as oracle_artifact and mask those cells; engine calendar semantics match the original Stata l12 intent.",
+      "confidence": "certain"
+    },
+    {
+      "factor": "DelCOL",
+      "discrepancy_type": [
+        "timing_lag_shift"
+      ],
+      "evidence": "Script DelCOL.py L64-66 uses POSITIONAL groupby('permno').shift(12) on the deduped, unfilled m_aCompustat panel; engine tree uses calendar delta/lag 12 months. All 15,359 missing-in-engine cells (extra=0, cells_beyond_tol=0) occur where the permno's 12th-prior Compustat row is NOT 12 calendar months back: sampled 15,359 in-grid missing cells -> 100% have positional-lag month != t-12, and oracle == positional-lag formula for 100% of them. Example: permno 18331, 1953-06: oracle=0.026152, engine=NaN; script's shift(12) lands on 1951-06 (24-month gap) and ((lct-dlc)-(lag_lct-lag_dlc))/(0.5*(at+lag_at)) with that row = 0.026152 exactly. Liquid check IBM 12490 1999-01..08: engine==oracle exactly (-0.009420/0.031563) where the panel is contiguous.",
+      "proposed_fix": "Replace the calendar DELTA(x,12)/LAG(at,12) with a positional-lag op evaluated on the m_aCompustat native row domain: per permno, compact rows where the dataset has an observation, shift 12 rows, re-expand to the grid (e.g. new op POSITIONAL_LAG(var, 12, domain=m_aCompustat) used inside the same DIV/DELTA structure). Alternatively document as an oracle quirk (positional lag over gapped fiscal panels is a Stata-port artifact) and accept the engine's calendar lag; but to reconcile to the oracle, positional lag is required.",
+      "confidence": "certain"
+    },
+    {
+      "factor": "DelDRC",
+      "discrepancy_type": [
+        "formula_error",
+        "timing_lag_shift"
+      ],
+      "evidence": "Engine tree is only delta(drc,12)/avg(at) with NO exclusion filters, but DelDRC.py L81-89 nulls rows where (ceq<=0) | (drc==0 & DelDRC==0) | (sale<5) | (6000<=sic<7000). Sampled 30,000 of the 2,786,464 extra-in-engine cells: 100% fire at least one script filter; breakdown: drc==0 & value==0 zero-filter 97.25%, financial SIC 20.6%, sale<5 8.4%, ceq<=0 3.9% (overlapping). Proof cells: IBM 12490 1999-01..08 engine=0.0 oracle=NaN with drc=0 (zero-filter); permno 79747 2014-04 engine=0 oracle=NaN sic=6020 (financial); permno 16069 2019-06 sale=0.0; permno 68523 1982-06 ceq=-6.537. The 1,884 missing cells are 100% positional-vs-calendar lag gaps (gap12!=12 for all), same mechanism as DelCOL.",
+      "proposed_fix": "Extend the tree with the script's masks applied with NaN-passes semantics: result.where( ~(ceq<=0) & ~(sale<5) & ~((sic>=6000)&(sic<7000)) & ~((drc==0)&(result==0)) ) where each comparison treats NaN as False (row kept). In DSL: WHERE_NOT(LE(ceq,0)), WHERE_NOT(LT(sale,5)), NONFINANCIAL_ONLY (op exists at p1_factor_engine.py L803, matches script's sic-NaN-keeps behavior), plus a ZERO_LEVEL_ZERO_CHANGE_TO_NULL(drc, result) mask. Also apply the same positional-lag fix as DelCOL for the 1,884 misses.",
+      "confidence": "certain"
+    },
+    {
+      "factor": "EP",
+      "discrepancy_type": [
+        "formula_error",
+        "universe_coverage"
+      ],
+      "evidence": "(1) _op_positive_only (p1_factor_engine.py L783-784) is x.where(x > 0) \u2014 strictly positive \u2014 but EP.py L62 only nulls EP<0 and KEEPS EP==0. All 516 missing-in-engine cells have oracle value exactly 0.0 and ib==0 (100%); e.g. permno 11017 1952-06: oracle=0.0, engine=NaN, ib=0.0. (2) Universe: 30,000 sampled extra cells are 99.85% OUTSIDE SignalMasterTable (script L32-42 restricts to SMT); e.g. permno 68646 1990-04 engine=0.32666 oracle=NaN shrcd=18 (not 10/11/12), permno 56290 1980-11 shrcd=48 \u2014 engine evaluates over unfiltered monthlyCRSP mve_permco. Liquid IBM 1999-01..08 matches exactly (0.048770 etc.), cells_beyond_tol=0.",
+      "proposed_fix": "Change the op to keep zeros: use x.where(x >= 0) (the existing negative_to_null op at L787-788) instead of positive_only in the tree; and mask output to the SignalMasterTable universe (shrcd 10/11/12, exchcd 1/2/3 permno-months). Tiny residual (~0.15% of extras are in-SMT) comes from the engine grid supplying a t-6 mve where the SMT self-merge row is absent; masking both t and using SMT-sourced mve domain for the LAG(mve_permco,6) removes it.",
+      "confidence": "certain"
+    },
+    {
+      "factor": "EarningsForecastDisparity",
+      "discrepancy_type": [
+        "universe_coverage"
+      ],
+      "evidence": "Formula and IBES pre-filters are correctly replicated (_op_earnings_forecast_disparity_signal, p1_factor_engine.py L2341-2365, includes fpedats > statpers+30d); cells_beyond_tol=0 and IBM 1999 matches exactly (-1.722291 etc.). The 80,565 extra cells are 100% outside SignalMasterTable (30,000 sampled, 0.0000 in SMT); e.g. permno 63263 1998-07 engine=-102.59 oracle=NaN shrcd=31; permno 11334 1989-03 shrcd=30 \u2014 engine's universe is _ibes_permno_month_map (IBESCRSPLinkingTable, L513-519) intersected with the unfiltered monthlyCRSP grid instead of SMT. The 254 missing cells (100% in SMT, all with valid tickerIBES) come from _ibes_permno_month_map's drop_duplicates(['tickerIBES','time_avail_m'], keep='first') at L518: when one IBES ticker links to multiple permnos (share classes), only the first permno receives the signal, whereas the script left-merges IBES onto SMT per permno so every linked permno gets it (same mechanism proven numerically for FEPS).",
+      "proposed_fix": "Replace _ibes_permno_month_map with the SignalMasterTable permno->tickerIBES mapping (one row per SMT permno-month, duplicates on ticker allowed) so the merge fans out to all share-class permnos, and mask the output grid to SMT permno-months. No formula change needed.",
+      "confidence": "certain"
+    },
+    {
+      "factor": "EntMult",
+      "discrepancy_type": [
+        "formula_error",
+        "universe_coverage"
+      ],
+      "evidence": "(1) _op_enterprise_multiple (p1_factor_engine.py L820-822) masks with (ceq >= 0) & (oibdp >= 0), which NULLS rows where ceq is NaN; EntMult.py L43 nulls only (ceq<0)|(oibdp<0) \u2014 NaN ceq compares False and the row SURVIVES. 100% of the 72,682 missing-in-engine cells have ceq NaN with all formula inputs present. Example: permno 18278 1957-12: oracle=5.8850408, engine=NaN; inputs mve=116.936, dltt=44.4, dlc=3.4, dc=0.0, che=8.9, oibdp=26.48, ceq=NaN; (mve+dltt+dlc+dc-che)/oibdp = 5.885041 = oracle. (2) 30,000 sampled extra cells are 100% outside SignalMasterTable (script L29-32 inner-joins SMT). Liquid IBM 1999 matches exactly (14.370664 etc.).",
+      "proposed_fix": "Change the screen to value.where(~(ceq < 0) & ~(oibdp < 0)) so NaN ceq/oibdp pass the screen (NaN oibdp already propagates NaN through the division), and mask the output to the SignalMasterTable universe to remove the 190,377 extras.",
+      "confidence": "certain"
+    },
+    {
+      "factor": "FEPS",
+      "discrepancy_type": [
+        "universe_coverage"
+      ],
+      "evidence": "Passthrough of fpi=='1' meanest is correct (cells_beyond_tol=0; IBM 1999 matches exactly, e.g. 6.54/7.52). (1) 30,000 sampled extra cells are 100% outside SignalMasterTable (e.g. permno 79464 2012-03 shrcd=31, permno 89510 2005-11 shrcd=31): engine universe = IBESCRSPLinkingTable x unfiltered monthlyCRSP grid instead of SMT (FEPS.py L58-77 left-joins IBES onto SMT). (2) The 466 missing cells are 100% in SMT with a matching IBES fpi=1 row whose meanest equals the oracle exactly; 88% are months where the SMT ticker maps to >1 permno \u2014 _ibes_permno_month_map (p1_factor_engine.py L513-519) drop_duplicates(['tickerIBES','time_avail_m'], keep='first') keeps only one permno per ticker-month. Proof: permno 61516 1980-03 oracle=1.65 engine=NaN, SMT ticker=BIO, linking table has permnos [61508, 61516] for BIO that month and the engine keeps only 61508; same for MOG->[42614,61807], CMD->[52652,63933]. Remaining ~12% are SMT-vs-linking-table mapping disagreements for the same root cause (engine maps by ticker, script maps by permno).",
+      "proposed_fix": "In _op_feps_signal, merge meanest onto the SignalMasterTable (permno, time_avail_m, tickerIBES) mapping instead of the deduped IBESCRSPLinkingTable \u2014 i.e. build the map per permno-month from SMT so duplicate share-class permnos each receive the estimate \u2014 and mask output to SMT permno-months.",
+      "confidence": "certain"
+    },
+    {
+      "factor": "FirmAgeMom",
+      "discrepancy_type": [
+        "universe_coverage",
+        "formula_error",
+        "fill_domain"
+      ],
+      "evidence": "Overlap is tiny (both=189,950 vs miss=361,005/extra=234,921) though values match on overlap (max_abs=3.6e-15). Three proven causes. (a) Quintile computed on the wrong universe/order: script (FirmAgeMom.py L43-44 then L60-62) filters to |prc|>=5-or-NaN AND age>=12 BEFORE pd.qcut per month; engine (_op_firm_age_momentum, p1_factor_engine.py L966-971) buckets ALL aged firms on the unfiltered monthlyCRSP grid and applies the price/age mask AFTER. Sampled months: 2000-06 script universe n=4,669 with q1 cutoff age<=41 vs engine n=8,282 with q1 cutoff age<=28; 100% of missing cells that month are engine_quintile=2 with identical ages (e.g. permno 84508, age 41 both sides, script q=1, engine q=2, oracle valued, engine NaN); pattern repeats 1990/2010/2019. (b) Universe: 34-94% of extra cells per month are permno-months absent from the filtered SMT panel entirely (e.g. 2010-06: 93.7%), engine ranks CRSP-only firms into q1 (e.g. permno 89765 age 37 q_engine=1, not in SMT panel). (c) fill/order-of-operations for lags: script fillna(0) applies only to SMT rows and stata_multi_lag runs on the ALREADY price/age-FILTERED panel, so lags landing on filter-removed months are NULL and the product is NaN; engine zero... uses actual grid returns. Proof: permno 10011 1990-06 engine=1.136986 = (1.561644+1)(1.254386+1)(1)(1.087413+1)(1.003215+1)-1 compounded from real CRSP rets at t-5..t-1, but those months have |prc|<5 (3.56..4.88) so the script dropped them pre-lag and oracle=NaN. Also _op_firm_age (L929-935) counts non-NaN prc months and masks 'original' firms, vs script's cumcount of ALL SMT rows with no such mask, and _row_bucket's ceil(pct*5) rank bucketing differs from pd.qcut quantile-edge bucketing under heavy age ties.",
+      "proposed_fix": "Demote to script. The signal is irreducibly script-shaped: age = per-permno SMT row count (not calendar, not prc-presence), a row filter that must run BEFORE both the cross-sectional pd.qcut (with duplicates='drop' edge semantics under massive ties) AND the lag construction (filtered-out months must yield NULL lags, while ret NaN->0 fill applies only to surviving original SMT rows). Reproducing this in the tree would require SMT-universe row-domain ops, a filter-then-qcut composite, and lag evaluation on the filtered row domain \u2014 effectively re-writing the script inside the engine.",
+      "confidence": "certain"
+    },
+    {
+      "factor": "NOA",
+      "discrepancy_type": [
+        "timing_lag_shift",
+        "oracle_artifact"
+      ],
+      "evidence": "Tree: div(OA-OL, lag(at,12)) matches NOA.py L50-59 formula exactly (both=3,115,585 cells, max_abs=0; IBM 2024-06 engine=oracle=0.4853705168). All 15,351 miss cells (12/12 sampled, categories={no_calendar_t12_but_12rows:12}) are cells where the permno's m_aCompustat series has a coverage gap: script L56 uses POSITIONAL groupby.shift(12) (12 rows back) while engine _op_lag (p1_factor_engine.py L704-710) is a calendar shift on the dense monthly grid and returns NaN. Proven numerically: permno 81021 t=2019-08, m_aCompustat months held = [2007-06..2008-05, 2019-06..2019-08]; positional lag row = 2007-08 (11 YEARS back), at=903.367; (OA-OL)/903.367 = 0.5938572 == oracle cell exactly; engine NaN because 2018-08 has no data. extra=0.",
+      "proposed_fix": "Keep the engine's calendar lag and mask these oracle cells in reconciliation: the oracle pairs balance-sheet data >12 calendar months apart (up to 12 years), a script quirk of positional shift across gaps, not the Hirshleifer et al. one-year lag. If bit-exact oracle replication is required, add a POSITIONAL_LAG(x,12) op that compacts each permno column to non-null m_aCompustat observation rows before shifting 12 observations; but the recommended resolution is to accept the engine and document the oracle artifact.",
+      "confidence": "certain"
+    },
+    {
+      "factor": "GrLTNOA",
+      "discrepancy_type": [
+        "timing_lag_shift",
+        "oracle_artifact"
+      ],
+      "evidence": "gr_ltnoa op replicates GrLTNOA.py L94-129 formula (both=3,139,905, max_abs=0; IBM 2024-06 engine=oracle=0.0161818042). All 15,333 miss cells (12/12 sampled: 10 gap-lag, 2 additionally not in monthlyCRSP but also gap-lag, has_calendar_t12=False in every sample) arise from script L83-86 positional shift(12) reaching across m_aCompustat gaps, e.g. permno 11275 t=2020-10 positional lag base month = 1990-12 (30 years back!), permno 68276 t=2015-08 lag base = 1982-08; engine calendar lag correctly NaN because no data exists at t-12. extra=0.",
+      "proposed_fix": "Same as NOA: accept engine calendar-lag NaN and document oracle artifact (oracle 'annual growth' values computed against decades-old lag bases). Optional exact-replication path: POSITIONAL_LAG op over the compacted per-permno m_aCompustat row series applied to all 10 lagged inputs inside gr_ltnoa.",
+      "confidence": "certain"
+    },
+    {
+      "factor": "InvestPPEInv",
+      "discrepancy_type": [
+        "timing_lag_shift",
+        "oracle_artifact",
+        "formula_error"
+      ],
+      "evidence": "MISS (14,319; 12/12 sampled = gap-lag): script L68-70 positional shift(12) vs engine calendar delta/lag; e.g. permno 12928 t=2023-12 positional lag month = 2001-12 (22 years back), oracle=1.97084 valued, engine NaN. EXTRA (30 cells): ALL are permno 82716 (and peers) where calendar at(t-12)==0: script L82-86 np.where(l12_at==0 -> NaN) but engine _op_div (L688) emits inf, which survives as a 'valued' cell \u2014 sampled: permno 82716 t=2000-06..2001-05 native=inf, at_t12=0, oracle NaN. Both-valued agree exactly (IBM 2024-06: -0.0048882845 both).",
+      "proposed_fix": "Two fixes: (1) guard the denominator \u2014 change tree to DIV(ADD(delta(ppegt,12),delta(invt,12)), ZERO_TO_NULL(LAG(at,12))) so l12_at==0 yields null like script L82-86; (2) the 14,319 misses are the positional-shift-across-gap oracle artifact \u2014 accept engine calendar lag or add POSITIONAL_LAG for exact replication.",
+      "confidence": "certain"
+    },
+    {
+      "factor": "OrderBacklog",
+      "discrepancy_type": [
+        "timing_lag_shift",
+        "oracle_artifact"
+      ],
+      "evidence": "Tree zero_to_null(div(ob,(at+lag(at,12))/2)) matches OrderBacklog.py L36-39 (both=626,994, max_abs=0; IBM 1983-10 engine=oracle=0.0188323874). All 3,033 miss cells (12/12 sampled, has_calendar_t12=False for every one) are gap cases: script L33 positional shift(12), e.g. permno 86319 t=2007-07 positional lag base = 1999-07 (8 years back), permno 31608 t=1990-03 base=1984-03; engine calendar lag NaN. extra=0.",
+      "proposed_fix": "Accept engine calendar lag; document oracle artifact (oracle scales ob by an 'average' of at values up to 8+ years apart). Optional POSITIONAL_LAG op for bit-exact replication.",
+      "confidence": "certain"
+    },
+    {
+      "factor": "GrAdExp",
+      "discrepancy_type": [
+        "universe_coverage",
+        "fill_domain",
+        "timing_lag_shift"
+      ],
+      "evidence": "size_decile_filtered (engine L879-884) ranks mve_permco pct-wise over the FULL unfiltered monthlyCRSP cross-section and its mask (ranks >= 0.1) silently drops NaN-size cells; script L82-91 computes qcut(10) deciles of SMT mve_c on the m_aCompustat-left-join-SMT sample and KEEPS rows whose decile is NaN (tempSize==1 is False for NaN). Miss categorization (n=4000 of 76,961): 73.3% engine_size_rank_NaN \u2014 no monthlyCRSP mve_permco, script kept (e.g. permno 79252 t=2008-02 oracle=0.110295, eng_rank=NaN, tempSize=NaN); 23.3% engine rank<0.1 but script decile!=1 or NaN \u2014 breakpoint-population mismatch (permno 12509 t=2015-05 eng_rank=0.0950 dropped, script tempSize=2 kept, oracle=0.106190); 3.4% calendar-gap lag on delta(log(xad),12) (script L75 positional shift). Extra (4000/4000 sampled): script decile 1 but engine rank>=0.1 (permno 52636 t=1978-06 eng_rank=0.1112 kept, tempSize=1, native=0.409260, oracle NaN) \u2014 the full-CRSP ranking places Compustat names higher than the Compustat-sample qcut. Values agree where both valued (IBM 2024-06: -0.0724898502 both).",
+      "proposed_fix": "Rework size_decile_filtered semantics to match script: (a) size input = SignalMasterTable mve_c, not monthlyCRSP mve_permco; (b) decile breakpoints from qcut over ONLY the cells present in the m_aCompustat panel that month (the factor's input domain), not the whole CRSP grid; (c) NaN-size cells must PASS the filter (mask = ~(decile==1), NaN-keep) instead of being dropped. E.g. params {size_source:'SignalMasterTable.mve_c', breakpoint_domain:'signal_input_domain', keep_missing_size:true, method:'qcut'}. The residual 3.4% gap-lag misses are the positional-lag oracle artifact (same as NOA family).",
+      "confidence": "certain"
+    },
+    {
+      "factor": "OperProf",
+      "discrepancy_type": [
+        "universe_coverage",
+        "fill_domain"
+      ],
+      "evidence": "Miss (n=4000 of 41,194): 92.8% engine size_filtered (L825-841, mask ranks>1/3 of mve_permco over full monthlyCRSP) drops cells the script keeps as tercile 2 \u2014 its qcut(3) of mve_c runs on the SMT-inner-join-Compustat(gvkey) sample (OperProf.py L43,L51-56), e.g. permno 91871 t=1995-04 eng_rank=0.3296 dropped, script tercile=2, oracle=-0.338744; 7.2% engine rank NaN (no CRSP mve_permco) while script keeps NaN-mve_c rows (tempsizeq NaN != 1). Extra (n=4000 of 139,121): 74.0% permno-month NOT in SignalMasterTable at all (script universe = SMT inner merge; engine grid = unfiltered m_aCompustat/monthlyCRSP permnos), e.g. permno 16809 t=2021-01 native=-0.013067, in_smt=False; 26.0% script tercile 1 (dropped) but engine rank>1/3 (kept), e.g. permno 60346 t=1985-11 eng_rank=0.342, tercile=1. Values agree where both valued (IBM 2024-06: 0.4635423720 both).",
+      "proposed_fix": "(1) Mask output to SignalMasterTable row presence (SMT universe mask op) \u2014 script inner-joins SMT on gvkey; (2) fix size_filtered: size = SMT mve_c, tercile breakpoints via qcut over the SMT-x-Compustat merged sample per month (i.e., the cells where the signal inputs exist), and NaN-size cells must PASS (keep) the filter rather than be dropped. Tree: SMT_UNIVERSE(SIZE_TERCILE_FILTERED(div(revt-cogs-xsga-xint, ceq), size=SMT.mve_c, min_tercile=2, breakpoint_domain=input_domain, keep_missing_size=true)).",
+      "confidence": "certain"
+    },
+    {
+      "factor": "NetPayoutYield",
+      "discrepancy_type": [
+        "universe_coverage",
+        "formula_error",
+        "oracle_artifact"
+      ],
+      "evidence": "EXTRA (n=4000 of 1,199,728) \u2014 engine tree has NONE of the script's row filters: 33.9% SIC 6000-6999 financials the script drops (L78-80; e.g. permno 66325 t=2008-04 sic=6111 native=0.0354295, oracle NaN, scriptNPY identical to native proving formula matches); 28.6% not in SignalMasterTable (script inner-joins SMT L38; engine universe unfiltered); 23.2% script obs_count<24 gate (L86-87; permno 10247 t=1988-09 scriptNPY=-6.33e-05==native but dropped as obs<24); 8.9% script 6-month lag NaN \u2014 script's self-merge lag (L47-56) needs an SMT-x-Compustat row exactly at t-6, engine lag(monthlyCRSP mve_permco,6) exists; 5.5% ceq<=0 filter (L79; permno 75503 ceq=-12.328). MISS (828/828 = 100%): oracle cells equal 1e-19 sentinel \u2014 script L62-68 sets exact-zero NPY with nonzero components (e.g. permno 50606 t=1987-12 prstkc=18.495==sstk=18.495, dvc=0 -> NPY=0 -> forced to 1e-19 and kept); engine nonzero() correctly drops the true zero. Values agree where both valued (IBM 2024-08: 0.0379778184 both).",
+      "proposed_fix": "Add the missing masks to the tree: NONFINANCIAL_ONLY(x, sic from m_aCompustat) AND ceq-mask (keep where ceq>0 OR ceq is null) AND SMT-universe mask; also lag mve_permco sourced from SignalMasterTable so the t-6 base month requires SMT presence. The >=24-surviving-observations gate is order-dependent (cumcount computed AFTER zero/SIC/ceq drops but BEFORE NaN drop) and irreducibly script-shaped \u2014 either add a MIN_OBS_HISTORY(24, count_domain=post-filter-valued-cells) op or demote NetPayoutYield to script. The 828 missing cells are an oracle artifact (Stata-compat 1e-19 sentinel for exact-zero net payout) and should be masked out of reconciliation, not chased in the engine.",
+      "confidence": "certain"
+    },
+    {
+      "factor": "RDcap",
+      "discrepancy_type": [
+        "engine_broken_empty",
+        "formula_error"
+      ],
+      "evidence": "Engine panel Data/golden/native/RDcap.parquet has 0 non-null cells vs oracle 537,801. Cause: _op_size_filtered (p1_factor_engine.py:825-841) has signature default min_tercile=2; the RDcap tree passes params {max_tercile: 1} only, so the mask is (rank_pct > (2-1)/3) & (rank_pct <= 1/3) \u2014 provably empty (simulated on random data: mask.any().any() == False). Oracle sample permno 54244: 1980-01..1980-08 RDcap = 0.0 in oracle, all NaN in engine. Script RDcap.py L71-76 keeps ONLY the smallest tercile (tempsizeq==1 via pd.qcut on SMT mve_c), matching max_tercile=1 with NO lower bound.",
+      "proposed_fix": "In the RDcap spec, pass params {min_tercile: null, max_tercile: 1} (or change _op_size_filtered so an explicit max_tercile/max_quintile suppresses the min_tercile=2 default). Secondary reconciliation after unblocking: (a) the tree's fillna(0) on xrd is grid-wide while the script zero-fills only within each permno's m_aCompustat span with fill_date_gaps (RDcap.py L51-57) \u2014 the engine will manufacture values in each firm's first 48 months unless lags landing before the span are kept NaN (mask to months >= first m_aCompustat obs + 48m); (b) terciles must be pd.qcut breakpoints on SMT-matched mve_c, not pct-rank on unfiltered monthlyCRSP mve_c (same qcut-vs-rank boundary flip proven on std_turn). If exact parity is required, demote to script.",
+      "confidence": "certain"
+    },
+    {
+      "factor": "std_turn",
+      "discrepancy_type": [
+        "formula_error",
+        "timing_lag_shift",
+        "universe_coverage"
+      ],
+      "evidence": "Same size_filtered default bug, partial: spec params {max_quintile: 3} + signature default min_tercile=2 -> engine keeps only rank_pct in (1/3, 3/5]; script std_turn.py L54-67 keeps quintiles 1-3 (bottom 60%, pd.qcut on mve_c=shrout*|prc|). Sampled 2000-06: script keeps 4,997 of 8,654, engine mask keeps 2,224; oracle valued 4,384 vs engine 1,860. Bottom-tercile cells: permno 10001 oracle=0.010522/engine=NaN (rank_pct 0.139, script q=1); 10042 oracle=0.039337/engine=NaN (rank 0.067). Explains the 1,412,309 miss_cand. Extras (208,886): all 87 extras in 2000-06 are script quintile 4 (dropped by oracle) with engine rank_pct 0.589-0.600 <= 0.6 (kept), e.g. permno 10644 engine=0.17723 rank=0.589 q=4 \u2014 pd.qcut linear-interpolation breakpoint vs pct-rank<=3/5 boundary mismatch. Additional divergence sources: script rolling_std over trailing 36 ROWS (polars rolling_std over permno, no gap fill) vs engine 36 calendar months on the wide grid (_op_rolling_std L779-780); and script KEEPS std_turn when mve_c is null (pl.when(null>=4) falsy, L62-67) while engine's null rank -> mask False -> drops.",
+      "proposed_fix": "1) Pass min_tercile: null in the spec (fixes the dominant miss). 2) Replace the pct-rank mask with a qcut-equivalent quintile assignment computed on mve_c = shrout*|prc| from monthlyCRSP (not mve_permco), with keep-when-size-null semantics (only null when quintile>=4 is definitively true). 3) The 36-row-vs-36-month window mismatch is irreducible on a calendar wide grid for gapped permnos \u2014 either accept the residual or demote to script. Given 2)+3) are script-shaped (qcut breakpoints + row-window), demote-to-script is the clean full-parity fix.",
+      "confidence": "certain"
+    },
+    {
+      "factor": "TotalAccruals",
+      "discrepancy_type": [
+        "formula_error",
+        "timing_lag_shift",
+        "oracle_artifact"
+      ],
+      "evidence": "EXTRAS (22,346, all year>1989): engine _op_total_accruals_signal line 2289 computes late = ni-(oancf+ivncf+fincf)+(tempsstk-tempprstkc-tempdv) using ZERO-FILLED temps, but script TotalAccruals.py L88-92 uses RAW df['sstk']-df['prstkc']-df['dv'] (the temp vars created at L53-55 are never used in the late branch) -> NaN propagates and the row is dropped. Sampled 3,193 post-1989 extras: 3,193/3,193 have raw sstk/prstkc/dv missing. Proof cell: permno 10930 t=1990-01, dv=NaN, engine=-0.153049 (= zero-filled late formula: -1.796-(-1.503-0.152+2.118)+(1.993-0-0))/1.738), oracle=NaN; exact script replication reproduces NaN. MISSES (14,893): calendar t-12 row absent but script positional groupby.shift(12) reaches an older row, e.g. permno 18331 t=1953-06 oracle=0.1509, engine NaN, no 1952-06 m_aCompustat row, positional-12 row = 1951-06 (at=138.3). Plus 108 oracle inf cells (at_lag12==0; script dropna keeps inf) that engine masks via total.where(np.isfinite(total)) at line 2293.",
+      "proposed_fix": "In _op_total_accruals_signal change line 2289 to use the raw panels: late = ni - (oancf + ivncf + fincf) + (sstk - prstkc - dv) (keep the zero-filled temps only for tempFi/tempWc/tempNc and drop tempsstk/tempprstkc/tempdv). Remove the where(np.isfinite) mask at line 2293 to preserve the 108 oracle infs (or accept as oracle_artifact \u2014 inf is a script quirk). The remaining ~14.8k misses are positional-vs-calendar lag at m_aCompustat gaps (oracle-side quirk of groupby.shift(12); original Stata l12. is calendar) \u2014 accept as oracle_artifact or demote to script for exact parity.",
+      "confidence": "certain"
+    },
+    {
+      "factor": "cfp",
+      "discrepancy_type": [
+        "formula_error",
+        "universe_coverage"
+      ],
+      "evidence": "MISSES (689,150; by decade 1960s:11,250 1970s:279,710 1980s:395,755 \u2014 the pre-cash-flow-statement era): engine tree is just DIV(oancf, mve_permco); the script cfp.py L106-129 computes cfp = (ib - accrual_level)/mve_permco when oancf is missing, where accrual_level = (d12.act - d12.che) - (d12.lct - d12.dlc - d12.txp - dp) via calendar 12-month self-merges (L95-111). Proof: IBM (12490) 1975-01: comp row has ib=1575.467, dp=1460.773, oancf=NaN; oracle cfp=0.000264, engine=NaN (same for 1975-02..08). EXTRAS (241,141, all post-1988): engine emits oancf/mve at permno-months outside SignalMasterTable \u2014 400/400 randomly sampled extra cells are absent from SMT but present in m_aCompustat; sampled shrcd values 71, 31, 18 (outside SMT's 10/11/12 screen), e.g. permno 75592 1994-07 engine=0.11194 shrcd=71.",
+      "proposed_fix": "Tree: cfp = COALESCE( DIV(oancf, mve_permco), DIV( SUB(ib, accrual_level), mve_permco ) ) where accrual_level = (act-LAG(act,12)) - (che-LAG(che,12)) - ((lct-LAG(lct,12)) - (dlc-LAG(dlc,12)) - (txp-LAG(txp,12)) - dp); branch order matters (oancf overrides even where the accrual branch is NaN \u2014 COALESCE with oancf-branch first gives that). Guard mve_permco==0 -> NaN (zero_to_null on the denominator). Additionally mask output to the SMT universe (shrcd 10/11/12, exchcd 1/2/3 and SMT-month membership) to remove the 241k extras. Caveat: the script's l12 values come only from rows surviving the SMT-inner-merge, so a grid calendar lag will still manufacture a few accrual-branch cells where t-12 was not in SMT \u2014 small residual; demote to script if exact parity is required.",
+      "confidence": "certain"
+    },
+    {
+      "factor": "fgr5yrLag",
+      "discrepancy_type": [
+        "universe_coverage"
+      ],
+      "evidence": "Engine _op_fgr5yr_lag_signal (p1_factor_engine.py:2425-2443) reproduces the script's screens/lag/June-expansion but links permno<->tickerIBES via _ibes_permno_month_map (IBESCRSPLinkingTable, unfiltered CRSP universe) instead of the script's inner merge with SignalMasterTable tickerIBES (fgr5yrLag.py L47-51, SMT = shrcd 10/11/12, exchcd 1/2/3). Sampled 200 of the 64,243 extra-in-engine cells: 200/200 have NO SignalMasterTable row for the permno at the June anchor month (e.g. permno 12293 cell 2013-09 anchor 2013-06 engine=25.19; 76592 2022-10 engine=11.5 \u2014 no SMT June row). cells_beyond_tol=0 and miss_cand=96 (negligible; keep-first dedup of the link table vs SMT mapping edge cases).",
+      "proposed_fix": "Replace _ibes_permno_month_map with the SignalMasterTable permno-month-tickerIBES mapping (inner merge on [permno, time_avail_m] then [tickerIBES, time_avail_m]) \u2014 equivalently, mask the final wide panel to SMT permno-month membership at the June anchor before the 12-month expansion. No tree/formula change needed.",
+      "confidence": "certain"
+    },
+    {
+      "factor": "sfe",
+      "discrepancy_type": [
+        "universe_coverage"
+      ],
+      "evidence": "Engine _op_sfe_signal (p1_factor_engine.py:2446-2472) uses _ibes_permno_month_map + monthlyCRSP prc instead of the script's SignalMasterTable merge (sfe.py L43-47). Two proven consequences: (1) EXTRAS (78,232): 150/150 sampled extra cells have no SMT row at the cell month (e.g. permno 76493 1996-10 engine=0.1067; 81067 2023-12 engine=-0.0068 \u2014 permnos outside the shrcd/exchcd screen). (2) MISSES (14,280): the broader engine sample shifts the per-month pd.qcut(numest,2) median-coverage split \u2014 reconstructed March 2016: script sample n=2397 (SMT), numest median=7; engine sample n=2876 (link table), median=6. Snap-on (SNA, permno 60206, numest=7, prc=171.43, medest=8.95): script covq=1 (low coverage, kept; oracle cell 2016-12 = 0.0522 = 8.95/171.43), engine covq=2 (dropped, NaN). cells_beyond_tol=0 \u2014 where both keep a row the values are identical.",
+      "proposed_fix": "In _op_sfe_signal, source the link AND prc from SignalMasterTable (merge ibes on [tickerIBES, prc_time] against SMT rows renamed time_avail_m->prc_time, taking SMT prc), so both the universe and the per-month numest qcut split are computed on the script's sample. The qcut split makes this op sample-sensitive, so the universe fix must be inside the op (post-hoc masking of the output cannot repair the median split, which drives the 14,280 misses).",
+      "confidence": "certain"
+    },
+    {
+      "factor": "SurpriseRD",
+      "discrepancy_type": [
+        "timing_lag_shift",
+        "oracle_artifact"
+      ],
+      "evidence": "cells_beyond_tol=0, extra=0, miss_cand=6,728. Every sampled miss cell is a month where the permno has NO m_aCompustat row at calendar t-12 but the script's POSITIONAL groupby(permno).shift(12) (SurpriseRD.py L33-34) reaches a row >12 calendar months back and still emits a value: permno 36062 t=1971-12 (oracle=0.0, xrd_t=0.091, no 1970-12 row, positional-12 row = 1970-03 xrd=0.23); permno 29137 t=1972-03 (oracle=1.0, positional-12 = 1970-12 xrd=1.36); permno 27457 t=1973-01 (oracle=1.0, positional-12 = 1971-08 xrd=0.835) \u2014 8/8 samples show 'calendar t-12 row exists: False'. Engine _op_surprise_rd_indicator (line 1171-1185) uses calendar shift(12) on the monthly wide grid -> NaN lag -> condition6 fails -> NaN. The oracle side is the quirky one: the original Stata used calendar l12., the pyCode's positional shift silently uses stale (>12-month-old) xrd across coverage gaps.",
+      "proposed_fix": "Document as oracle_artifact and accept the engine's calendar-lag behavior (economically correct; only 0.44% of oracle cells affected, zero value disagreements). If bit-exact parity with the oracle is required, implement a gap-aware positional lag (shift 12 OBSERVED m_aCompustat rows per permno, i.e., lag over each column's non-NaN subsequence) or demote to script.",
+      "confidence": "certain"
+    },
+    {
+      "factor": "MS",
+      "discrepancy_type": [
+        "formula_error",
+        "timing_lag_shift",
+        "universe_coverage"
+      ],
+      "evidence": "THREE proven mechanisms. (1) June-FYE timing quirk: MS.py:445-455 nulls tempMS unless month(time_avail_m) == (month(datadate)+6) % 12; for June fiscal-year-ends (6+6)%12 = 0, which NO calendar month equals, so June-FYE firms lose ALL values in the oracle. Engine p1_factor_engine.py:2000 uses the corrected mapping ((month-1+6)%12)+1 = 12, so it emits values the oracle never has. Sampled: MSFT (permno 10107, June FYE) native has 421 values from 1986-12, oracle has 0; of 200 sampled oracle-empty-but-native-populated permnos, 107 are pure June-FYE. This is the bulk of extra=94243. (2) Stata missing=+inf inequality semantics: script uses stata_ineq_pl (utils/stata_replication.py:415-449, fill_null(+inf)) so a NULL roa/cfroa/oancfqsum/xrdint/capxint/xadint vs a non-null RHS sets the indicator to 1; engine _median_binary (p1_factor_engine.py:1912-1921) and m3 (line 1981) require notna and yield 0. Sampled cell IBM (12490) 1966-06: script semantics give m3=1 (oancfqsum NULL -> +inf > niqsum=479.7) + m5=1 -> tempMS=2 = oracle exactly; engine semantics give m3=0 -> tempMS=1 = native exactly. Direction test: 88.3% of the 291,717 beyond-tol cells have oracle > native with mass at +3/+4 (the three intensity indicators all fire when atdenom2=lag3(atq) is null). A full replica with SMT universe + stata semantics + calendar windows matches the oracle on 98.4% of IBM's 513 months. (3) Universe: script merges m_aCompustat with SignalMasterTable (MS.py:97); engine merges with unfiltered monthlyCRSP (engine 1928-1941). Merged sample is 3.36M rows vs 3.04M (+10.5%); 1990-06 BM-quintile pool 5023 vs 4654 firms, shifting quintile edges, the sic2D>=3 filter, and every industry median (mve_permco itself matches same-month CRSP, so it is purely the row set). Additional latent divergence: script computes ALL FOUR rolling means (niqsum/xrdqsum/oancfqsum/capxqsum, MS.py:185-232) and revVol (MS.py:322-345) on the gap-filled calendar frame (first asrol call fill_gaps=True fills the panel, subsequent fill_gaps=False calls reuse it), while engine uses positional _rolling_observed for xrdqsum/oancfqsum/capxqsum (engine 1970-1972) and revVol (1986) \u2014 windows span >12/>48 calendar months across the BM-filter gaps.",
+      "proposed_fix": "In _op_ms_signal: (a) replace monthlyCRSP with SignalMasterTable for the mve_permco/sicCRSP merge; (b) replicate the script's timing bug exactly: mask tempMS where time_avail_m.month != (datadate.dt.month + 6) % 12 (i.e. keep the raw %12 result, so June FYE maps to 0 and never releases); (c) implement stata_ineq semantics: for m1/m2/m3/m6/m7/m8 use fillna(+inf) on BOTH sides before '>', and for m4/m5 fillna(+inf) before '<'; (d) route xrdqsum/oancfqsum/capxqsum and revVol through _rolling_with_month_gaps (calendar windows) like niqsum/niVol, since the script computes all rollings on one gap-filled frame.",
+      "confidence": "certain"
+    },
+    {
+      "factor": "DivInit",
+      "discrepancy_type": [
+        "universe_coverage"
+      ],
+      "evidence": "Engine builds from unfiltered monthlyCRSP (_prepare_monthly_stock_base, p1_factor_engine.py:1478-1492, then _op_dividend_initiation_flag 2087-2098); script builds on SignalMasterTable rows (DivInit.py:57-61, shrcd 10/11/12 & exchcd 1/2/3). Extra=1,041,130: a 5000-cell sample of native-only cells shows 0.0% present in SMT (shrcd 73/31/14/44..., exchcd 4/5/0...). Beyond-tol=4315 splits 2899 native=1/oracle=0 vs 101 native=0/oracle=1 in a 3000 sample, both traced to span/coverage: (i) permno 24694 \u2014 monthlyCRSP span starts 1951-08, SMT span starts 1951-09 which IS the first dividend month; script's divsum_lag1=shift(1) is NaN on the first span row so (NaN < 1e-10)=False can never fire (DivInit.py:79-80), oracle=0; engine has the earlier 1951-08 CRSP row with 24m-sum 0 -> fires, native=1 for 6 months. (ii) permno 17929 at 1930-02 \u2014 dividend 1929-08 exists in monthlyCRSP but its month is absent from SMT, so the script's SMT-row merge discards it and the clean 24m lookback fires initiation at 1929-11 (oracle=1 through 1930-04); engine sees the 1929-08 dividend and does not fire (native=0). The rolling arithmetic itself (24m sum, lag, 1e-10 guard, 6m max) is faithfully ported; note engine's positional rolling(24)/rolling(6) equals the script's calendar windows only when the underlying row set is a gap-filled calendar span.",
+      "proposed_fix": "Build the panel from SignalMasterTable rows (permno, time_avail_m) instead of monthlyCRSP; merge summed cash dividends (cd2 in {2,3}, exdt month) onto SMT rows only, fillna(0); then gap-fill each permno's SMT span to a complete monthly calendar (gap rows keep divamt NULL, not 0) before the 24m rolling sum, shift(1), 1e-10 test, and 6m rolling max \u2014 this reproduces both the first-span-month NaN-lag behavior and the discarded out-of-SMT dividends.",
+      "confidence": "certain"
+    },
+    {
+      "factor": "MomRev",
+      "discrepancy_type": [
+        "fill_domain",
+        "universe_coverage",
+        "formula_error"
+      ],
+      "evidence": "Tree is fillna(value=0) over the monthlyCRSP ret WIDE grid feeding _op_momentum_reversal_signal (p1_factor_engine.py:1006-1014). The script (MomRev.py:46) zero-fills ret only on existing SignalMasterTable rows, and stata_multi_lag (utils/stata_replication.py:110-122) gap-fills so any lag month without a real row stays NaN and the momentum products propagate NaN. Sampled: at 1990-06 the engine's Mom6m pool is 38,709 of 38,709 grid columns non-NaN, of which 31,785 are exactly 0 (manufactured pre-listing/post-delisting/gap cells), vs the script's 6,086 SMT rows; native flags 3,163 cells that month vs oracle's 393. AAPL (14593, first CRSP month 1981-01): native MomRev=1 at 1982-02 built from Mom36m=-0.170 whose lags 13-36 reach to 1979-02, entirely pre-listing zeros \u2014 oracle NaN (first value 1985-06). Liquid-name counts: AAPL 215 native vs 36 oracle, IBM 482 vs 42, MSFT 136 vs 3; extras total 1,913,035 (median 112 months after listing, 76% inside SMT months \u2014 i.e. legitimate months corrupted by the polluted quintile pool, not just pre-listing junk). Bucket mechanics also diverge: engine _row_bucket (rank-percentile, line 938-942) vs script pd.qcut(labels=False, duplicates='drop')+1 (MomRev.py:77-86); on the engine's own tie-heavy pool (82% zeros) qcut collapses to 2 bins (quintile 5 unattainable) while _row_bucket yields {1,3,5} \u2014 92% disagreement \u2014 so the extremes only remain reachable because of the approximation; miss=12052 and the 885 opposite-sign cells follow from the shifted quintile membership.",
+      "proposed_fix": "Reimplement as a long-form kernel on the SignalMasterTable universe: take SMT ret, fillna(0) on SMT rows only, compute calendar-valid lags 1-5 and 13-36 (NaN when the lag month has no SMT row, i.e. gap-fill each permno span and lag over it), form the two NaN-propagating compound returns, then per-month pd.qcut(q=5, labels=False, duplicates='drop')+1 on the SMT pool (do NOT pre-clean inf \u2014 MomRev.py:72-73 is dead code), and flag (q6==5 & q36==1)->1, (q6==1 & q36==5)->0. Remove the tree-level whole-grid fillna(0).",
+      "confidence": "certain"
+    },
+    {
+      "factor": "RDAbility",
+      "discrepancy_type": [
+        "formula_error"
+      ],
+      "evidence": "Two proven kernel divergences in _op_rd_ability_signal (p1_factor_engine.py:1790-1870). (1) Rolling-OLS window semantics (drives beyond_tol=6584, max_abs=65.1): script uses polars_ols rolling_ols(window_size=8, min_periods=6, null_policy='drop') over gvkey sorted by fyear (RDAbility.py:282-299) \u2014 null (tempY,tempXLag) rows are dropped BEFORE rolling, so each regression uses the last 8 VALID pairs and can span more than 8 fiscal years; engine (lines 1817-1826) regresses on the valid subset of the last 8 POSITIONAL rows. Sampled max-diff cell permno 33145 / gvkey 4412, fyear-1982 row (feeds 1983-06..1984-05): per-lag betas engine [-129.156, -317.406, 2.410, 10.347, 43.156] -> mean -78.130 == native -78.12956; last-8-valid-pairs betas [-124.337, +3.334, 2.410, 10.347, 43.156] -> mean -13.018 == oracle -13.017795 (exact to float precision). Lag-2 shows the mechanism: 8 valid pairs exist in rows 0-10 but only 7 inside the positional window, and the differing sample flips the beta from +3.33 to -317.41. (2) tempMean-null gating (drives miss=3821): script nulls gamma only when tempMean < 0.5 AND tempMean is NOT null (RDAbility.py:350-356); tempMean is null when the current consecutive-fyear segment has <6 rows (asrol_custom gap_threshold=1, RDAbility.py:109-117) \u2014 gamma is KEPT. Engine line 1841 `gamma.where(temp_mean >= 0.5)` also nulls gamma when temp_mean is NaN. Sampled miss cell permno 67345 (gvkey 9191) 1996-03: fyear gap 1991->1994 makes the segment length 2 -> tempMean null for all 5 lags; script-semantics RDAbility = 6.5021271 == oracle 6.502127, native NaN. Everything else (tempX/tempY construction, positional valid_count>=6 gate, x12 monthly expansion, gvkey-last/permno-first dedup, tercile filter) matches \u2014 MSFT 288/288 months agree exactly.",
+      "proposed_fix": "In _op_rd_ability_signal: (a) for each lag n, compute the beta from the last 8 non-null (tempY, tempXLag) pairs up to and including row i (drop nulls first, then window), while KEEPING the existing separate gate that the last 8 positional rows contain >=6 valid pairs; (b) change line 1841 to only null gamma when temp_mean is non-null and < 0.5, e.g. gamma.where(~(temp_mean.notna() & (temp_mean < 0.5))) or equivalently gamma.mask(temp_mean < 0.5) with NaN comparisons treated as False.",
+      "confidence": "certain"
+    },
+    {
+      "factor": "VolumeTrend \u2014 biased slope when window has missing observations (kernel re-implements rolling OLS incorrectly)",
+      "discrepancy_type": [
+        "formula_error"
+      ],
+      "evidence": "_op_rolling_trend_slope_scaled (p1_factor_engine.py:2588-2598) builds t_centered = t - mean(arange(60)) and denom = sum(t_centered^2) over ALL 60 window positions, then computes slope = sum_valid((x - xbar_valid) * t_centered)/denom \u2014 the time-regressor mean and variance are never restricted to the valid rows, so any window with <60 non-null cells gets a shrunken/shifted slope. Script (VolumeTrend.py:47-59) runs least_squares.rolling_ols(window_size=60, min_periods=30, null_policy='drop') which fits proper OLS on the non-null pairs. Numeric proof, MSFT permno 10107 at 1988-08 (60-cal-month window contains only 31 rows, 30 non-null): proper NaN-dropping OLS slope = 0.39485219, meanX = 7.31778 -> 0.05395792 == oracle cell exactly; engine formula with t\u0304/denom over 60 positions gives slope 0.04931538 -> 0.006739118 == native cell exactly (diff 0.0472, the largest MSFT error). This mechanism accounts for the beyond-tol both-present cells (max_abs\u22480.102), concentrated in each permno's first ~30-59 months and around null-vol months.",
+      "proposed_fix": "In the loop, compute the OLS moments per column over the valid mask only: for each column take t_v = positions of non-null rows, slope = cov(x_v, t_v)/var(t_v) (i.e., center both x and t on the valid subset and divide by sum((t_v - mean(t_v))^2)). Vectorizable with nansum-based count/sum/sumsq accumulators per column.",
+      "confidence": "certain"
+    },
+    {
+      "factor": "VolumeTrend \u2014 loop starts at grid row 59 so pre-1930-11 values are never emitted (all 13,800 misses)",
+      "discrepancy_type": [
+        "formula_error",
+        "timing_lag_shift"
+      ],
+      "evidence": "p1_factor_engine.py:2591 `for end in range(window_months - 1, len(x.index))` iterates from row 59 of the 1925-12-anchored template grid, so the first possible output month is 1930-11. The script emits from each permno's 30th observation (min_periods=30). Verified: all 13,800 missing cells (native NaN, oracle value) fall on grid rows <59 \u2014 last miss date is 1930-10-01; IBM (12490) misses exactly 1928-06..1930-10 (29 cells).",
+      "proposed_fix": "Iterate `for end in range(len(x.index))` with window = x.iloc[max(0, end - window_months + 1):end + 1]; the existing min_obs=30 validity gate already enforces the observation requirement.",
+      "confidence": "certain"
+    },
+    {
+      "factor": "VolumeTrend \u2014 output not masked to observed monthlyCRSP rows (\u224892% of the 699,679 extras)",
+      "discrepancy_type": [
+        "fill_domain",
+        "universe_coverage"
+      ],
+      "evidence": "Engine computes on the full template grid, so for up to 59 months after a permno's last monthlyCRSP row the trailing window still has \u226530 non-null obs and a value is emitted; the script's row set is exactly monthlyCRSP rows (save_predictor only drops nulls). Random sample of 400 extra cells: 369 (92%) have NO monthlyCRSP row at that permno-month (e.g. permno 49971 valued at 2017-04 though its CRSP data ends 2016-10).",
+      "proposed_fix": "After computing the panel, mask with the observed permno-month presence matrix from monthlyCRSP (cell kept only where a raw CRSP row exists), the same fix VolSD needs.",
+      "confidence": "certain"
+    },
+    {
+      "factor": "VolumeTrend \u2014 missing pooled 1/99 winsor2 trim (remaining ~8% of extras and tail-value diffs)",
+      "discrepancy_type": [
+        "formula_error",
+        "fill_domain"
+      ],
+      "evidence": "VolumeTrend.py:79 `winsor2(df, ['VolumeTrend'], replace=True, trim=True, cuts=[1, 99])` with no by-group trims values outside the POOLED [p1,p99] to null (winsor2.py uses polars quantile, default 'nearest' interpolation); the engine tree/kernel has no trim step. Oracle values are bounded in [-0.0571, 0.0664] while native extras include values outside those bounds: of the row-present sampled extras, 23% lie outside the oracle min/max (trimmed in oracle, present in native); pooled 2% of ~3.73M pre-trim obs \u2248 74k cells is the right order for the non-fill-domain extras (~55k). Also converts meanX==0 infs to null.",
+      "proposed_fix": "After slope/mean ratio, apply a pooled (no group) 1%/99% trim using nearest-rank quantiles (sorted[round(p*(n-1))]) to match polars 'nearest', setting out-of-range and \u00b1inf cells to NaN.",
+      "confidence": "certain"
+    },
+    {
+      "factor": "PredictedFE \u2014 panel universe/link built from IBESCRSPLinkingTable + inner joins instead of SignalMasterTable left joins (dominant cause: cohort-wide coefficient shifts on ~591k cells, max 0.083, plus most of miss=38,308/extra=32,960)",
+      "discrepancy_type": [
+        "universe_coverage"
+      ],
+      "evidence": "Engine (_prepare_analyst_value_signals, p1_factor_engine.py:1362-1382) starts from _ibes_permno_month_map (IBESCRSPLinkingTable, line 513-519) inner-joined to monthlyCRSP (taking CRSP prc) and inner-joined to m_aCompustat; script (ZZ1_...py L91-122) starts from SignalMasterTable (shrcd 10/11/12, exchcd 1/2/3 filtered; its own tickerIBES and prc) with LEFT joins. Because PredictedFE broadcasts per-June-cohort regression coefficients to every firm, a changed fit universe shifts ALL cells in the cohort \u2014 observed: per-month mean |native-oracle| is constant within each 12-month block (e.g. 0.002873 for the whole 1990-06..1991-05 cohort). A/B proof: full script replica == oracle (0 extra, 0 miss, MSFT 1992-06 = 0.08913587 exact); swapping ONLY the universe/link moves MSFT 1992-06 to 0.07606816 == native exactly and drops native maxdiff from 0.083 to 0.006; replica with all engine choices == native bit-for-bit (0 cells >1e-4) and reproduces the reported extra=32,960/miss=38,308 exactly.",
+      "proposed_fix": "Build the base panel from SignalMasterTable.parquet (permno, tickerIBES, time_avail_m, prc) and LEFT-join monthlyCRSP shrout and the m_aCompustat columns, exactly as script L91-122; drop the IBESCRSPLinkingTable path for this kernel.",
+      "confidence": "certain"
+    },
+    {
+      "factor": "PredictedFE \u2014 FErr trim uses pandas linear-interpolated quantiles vs winsor2's polars 'nearest' quantiles (secondary: 183,108 cells perturbed \u22640.0097)",
+      "discrepancy_type": [
+        "formula_error"
+      ],
+      "evidence": "_trim_by_group (p1_factor_engine.py:1269-1271) uses pandas .quantile default (linear interpolation) per time_avail_m; script uses winsor2 (winsor2.py, pl.col(var).quantile) whose polars default interpolation is 'nearest'. A/B test swapping only this in the otherwise script-exact replica perturbs 183,108 cells vs oracle (maxdiff 0.0097) \u2014 boundary FErr rows flip in/out of each cohort's fit sample, moving the broadcast coefficients.",
+      "proposed_fix": "In the FErr trim, compute cutoffs as nearest-rank quantiles: sorted_values[round(q*(n-1))] within each time_avail_m group.",
+      "confidence": "certain"
+    },
+    {
+      "factor": "PredictedFE \u2014 min_obs=5 gate skips small (early) June cohorts the script still fits (~8.5k of the missing cells)",
+      "discrepancy_type": [
+        "universe_coverage",
+        "formula_error"
+      ],
+      "evidence": "_ols_predictions_by_group is called with min_obs=5 (p1_factor_engine.py:1447) and skips any cohort with <5 complete-case fit rows; the script's polars_ols .least_squares.ols(..., null_policy='drop').over('time_avail_m') fits every cohort regardless of size. Universe-only A/B leaves 29,740 misses vs the reported 38,308; the residual ~8,568 appears only when the min_obs/trim engine choices are added, and the all-engine-choices replica reproduces 38,308 exactly.",
+      "proposed_fix": "Remove the min_obs=5 gate (fit whenever lstsq is solvable, i.e. \u22651 row; np.linalg.lstsq handles rank deficiency), matching polars_ols behavior. Note: the engine's lagRank via groupby shift(1) (line 1439) vs the script's 12-month calendar join was A/B-proven a NO-OP here (identical output) because FErr's own strict 12-month join already restricts the fit sample \u2014 no fix strictly required, though aligning it is harmless.",
+      "confidence": "likely"
+    },
+    {
+      "factor": "VolSD \u2014 274,939 extras from computing on the full template grid without masking to observed monthlyCRSP rows",
+      "discrepancy_type": [
+        "fill_domain",
+        "universe_coverage"
+      ],
+      "evidence": "Engine _op_rolling_std (p1_factor_engine.py:779-780) runs pandas rolling(36, min_periods=24) on the wide template grid, so for up to 35 months after a permno's last monthlyCRSP row the trailing window still holds \u226524 non-null obs and a value is emitted; script output rows are exactly monthlyCRSP rows. All 8 randomly sampled extra cells have no CRSP row at that month (e.g. permno 49971 valued 2017-04, CRSP ends 2016-10; permno 16715 valued 2005-08, CRSP ends 2005-05). Exact script rerun on current data lacks 274,039 of native's cells (\u2248 the 274,939 reported extras) and has zero cells native lacks. monthlyCRSP has no intra-listing calendar gaps (0 of 38,843 permnos), so the row-window vs calendar-window concern is moot; for liquid contiguous permnos (12490/10107/14593) native == oracle exactly.",
+      "proposed_fix": "Mask the rolling output with the observed permno-month presence matrix from monthlyCRSP (keep a cell only where a raw row exists \u2014 note rows can exist with null vol and still receive a value, so mask on row presence, not vol non-null).",
+      "confidence": "certain"
+    },
+    {
+      "factor": "VolSD \u2014 the 14,283 beyond-tol value cells (max_abs 30.2) are a stale-oracle artifact, not an engine bug",
+      "discrepancy_type": [
+        "oracle_artifact"
+      ],
+      "evidence": "Rerunning the script's exact computation (polars rolling_std(36, min_samples=24).over(permno) on sorted current monthlyCRSP) matches NATIVE everywhere to float32 storage precision (global maxdiff 2.4e-4) but differs from the ORACLE at 87,881 cells >1e-6. Mismatches vs oracle occur in contiguous \u226446-month runs per permno (415 permnos; e.g. permno 20909 runs 1940-03..1941-01 and 1970-03..1973-01 \u2014 the 36-month contamination footprint of single revised raw vol observations). The oracle contains values impossible under current data: permno 64434 has an oracle value at 1984-04 when only 21 rows (20 non-null) exist against min_samples=24, and 310/415 mismatch permnos have oracle series starting earlier than the current data allows; from the first full-window month onward (e.g. 64434 from 1985-07) oracle == native exactly. The oracle was generated from an older monthlyCRSP vintage.",
+      "proposed_fix": "No engine change for the value cells \u2014 regenerate the VolSD oracle from the current monthlyCRSP.parquet (VolSD.py runs as-is). Only the fill-domain masking fix above is an engine change.",
+      "confidence": "certain"
+    }
+  ]
+}
